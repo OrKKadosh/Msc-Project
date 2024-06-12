@@ -1,0 +1,2 @@
+ STARTING JOB WITH THE COMMAND:  sleep 600 
+slurmstepd: error: *** JOB 62521 ON cs-pheno-13 CANCELLED AT 2024-06-11T19:57:45 ***

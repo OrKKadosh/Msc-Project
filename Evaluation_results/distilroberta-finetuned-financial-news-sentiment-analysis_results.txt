@@ -1,0 +1,15 @@
+{
+    "Lora YES/NO": 0,
+    "Pre-Train YES/NO": 0,
+    "model_name": "distilroberta-finetuned-financial-news-sentiment-analysis",
+    "results": {
+        "eval_loss": 0.23249168694019318,
+        "eval_accuracy": 0.9546332046332047,
+        "eval_precision": 0.931329053460201,
+        "eval_recall": 0.954860724130501,
+        "eval_f1": 0.9424901171435826,
+        "eval_runtime": 4.9252,
+        "eval_samples_per_second": 210.347,
+        "eval_steps_per_second": 26.395
+    }
+}

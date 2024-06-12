@@ -1,0 +1,13 @@
+{
+    "model_name": "distilroberta-finetuned-financial-news-sentiment-analysis",
+    "results": {
+        "eval_loss": 0.2972654104232788,
+        "eval_accuracy": 0.9507722007722008,
+        "eval_precision": 0.9398880988647011,
+        "eval_recall": 0.9488274900293155,
+        "eval_f1": 0.9442209664422992,
+        "eval_runtime": 2.4498,
+        "eval_samples_per_second": 422.896,
+        "eval_steps_per_second": 53.066
+    }
+}
