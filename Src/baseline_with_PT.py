@@ -1,8 +1,11 @@
 import os
+
 import torch
+
 from transformers import TrainingArguments, AutoTokenizer, AutoModelForSequenceClassification, DataCollatorWithPadding, Trainer
 from datasets import load_metric, load_dataset, concatenate_datasets
 import numpy as np
+from peft import LoraConfig, TaskType, get_peft_model
 import json
 
 SEED = 1694
@@ -24,12 +27,12 @@ recall_metric = load_metric("recall")
 f1_metric = load_metric("f1")
 
 # get the initialized tokenizer
-def get_tokenizer(name):
-  return AutoTokenizer.from_pretrained(name)
+# def get_tokenizer(name):
+#   return AutoTokenizer.from_pretrained(name)
 
 # Tokenize the datasets for each dataset
 def tokenize_function(tokenizer, examples):
-      return tokenizer(examples['sentence'], padding='max_length', truncation=True, max_length=256)
+    return tokenizer(examples['sentence'], padding='max_length', truncation=True, max_length=256)
 
 
 # Encode labels as integers according to: 0-negative, 1-neutral, 2-positive
@@ -69,17 +72,27 @@ def compute_metrics(eval_pred):
   }
 
 
-model0 = {"tokenizer": "FacebookAI/roberta-base", "model": AutoModelForSequenceClassification.from_pretrained(
-    'mrm8488/distilroberta-finetuned-financial-news-sentiment-analysis', num_labels=3).to(device),
+model0 = {"save_directory": "./Saved_modelspre_trained/distilroberta-finetuned-financial-news-sentiment-analysis",
           "name": "distilroberta-finetuned-financial-news-sentiment-analysis"}
-model1 = {"tokenizer": "KernAI/stock-news-distilbert",
-          "model": AutoModelForSequenceClassification.from_pretrained('KernAI/stock-news-distilbert', num_labels=3).to(
-              device), "name": "stock-news-distilbert"}
-model2 = {"tokenizer": "bert-base-uncased", "model": AutoModelForSequenceClassification.from_pretrained(
-    'ProsusAI/finbert', num_labels=3).to(device),
+model1 = {"save_directory": "./Saved_modelspre_trained/stock-news-distilbert",
+          "name": "stock-news-distilbert"}
+model2 = {"save_directory": "./Saved_modelspre_trained/Finbert",
           "name": "Finbert"}
 
 models = [model0, model1, model2]
+
+save_directory = "./saved_model"
+loaded_model = AutoModelForSequenceClassification.from_pretrained(save_directory)
+loaded_tokenizer = AutoTokenizer.from_pretrained(save_directory)
+
+# LORA:
+# lora_rank = [4, 8, 16]
+# lora_alpha = lora_rank * 2
+# # lora_alphas = lora_rank * [1, 1.5, 2]
+# lora_dropout = [0.0, 0.05, 0.1, 0.2]
+# idx_lora = 0
+# lora_config = LoraConfig(task_type=TaskType.SEQ_CLS, r=lora_rank[idx_lora], lora_alpha=lora_alpha[idx_lora], lora_dropout=lora_dropout[idx_lora])
+# evaluation_results = {}
 
 FPB = load_dataset("financial_phrasebank", 'sentences_75agree')['train']
 train_FPB, test_FPB = FPB.train_test_split(test_size=0.3, seed=SEED).values()
@@ -101,11 +114,13 @@ NUM_DATASETS = 4
 
 for model in models:
 
-    model_name = model["name"]
-    tokenizer = AutoTokenizer.from_pretrained(model["tokenizer"])
+    model_name = model['name']
+    save_directory = model["save_directory"]
+    tokenizer = AutoTokenizer.from_pretrained(save_directory)
     tokenized_test_dataset = test_dataset.map(lambda x: tokenize_function(tokenizer, x), batched=True)
 
-    chosen_model = model["model"]
+    chosen_model = AutoModelForSequenceClassification.from_pretrained(save_directory)
+
 
     data_collator = DataCollatorWithPadding(tokenizer=tokenizer, return_tensors='pt')
 

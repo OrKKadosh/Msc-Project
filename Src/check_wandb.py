@@ -27,3 +27,4 @@ for epoch in range(2, epochs):
 
 # [optional] finish the wandb run, necessary in notebooks
 wandb.finish()
+
