@@ -8,6 +8,9 @@
 # to take just the headlines from fiqa and not the tweets - DONE
 # to check it even works, maybe the model not even trains! to make sanity checks - DONE
 # to check which dataset should be the test set - DONE
+from csv import excel
+
+# to create the back-translated datasets and FT the pre-trained models over all the datasets.
 
 # to create random seeds for each run, and see if i get the same errors for some different seeds. this will get me the real errors and not some random errors to analyse.
 # to check which datasets are irrelevant to the test set, meaning their FT doesn't improve results.
@@ -21,7 +24,7 @@
 # loaded_model = AutoModelForSequenceClassification.from_pretrained(save_directory)
 # loaded_tokenizer = AutoTokenizer.from_pretrained(save_directory)
 # ____________________________________________________________________________________
-
+from translate import Translator
 import os
 from transformers import DataCollatorForLanguageModeling
 import torch
@@ -29,12 +32,13 @@ from datasets import load_dataset, concatenate_datasets, Dataset
 from transformers import AutoTokenizer, AutoModelForSequenceClassification, AutoModelForMaskedLM
 from transformers import TrainingArguments, Trainer, DataCollatorWithPadding
 import numpy as np
+import re
 from peft import LoraConfig, TaskType, get_peft_model
 import json
 import pandas as pd
 from datasets import load_metric
 
-
+#
 
 # Make sure a GPU is available
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -46,23 +50,36 @@ hyper_params_bank = {"learning_rate_model0": [1e-5,3e-5, 5e-5], "learning_rate_m
 SEED = 1694
 np.random.seed(SEED)
 torch.manual_seed(SEED)
-# Load the model and send it to the GPU
+
 model0 = {"tokenizer": "FacebookAI/roberta-base",
           "model": AutoModelForSequenceClassification.from_pretrained('mrm8488/distilroberta-finetuned-financial-news-sentiment-analysis', num_labels=3).to(device),
           "model_for_PT": AutoModelForMaskedLM.from_pretrained('mrm8488/distilroberta-finetuned-financial-news-sentiment-analysis').to(device),
           "name": "distilroberta-finetuned-financial-news-sentiment-analysis"}#distilroberta-FT-financial-news-sentiment-analysis
-
 model1 = {"tokenizer": "KernAI/stock-news-distilbert",
           "model": AutoModelForSequenceClassification.from_pretrained('KernAI/stock-news-distilbert', num_labels=3).to(device),
           "model_for_PT": AutoModelForMaskedLM.from_pretrained('KernAI/stock-news-distilbert'),
           "name": "stock-news-distilbert"}#stock-news-distilbert
-
 model2 = {"tokenizer": "bert-base-uncased",
           "model": AutoModelForSequenceClassification.from_pretrained('ProsusAI/finbert', num_labels=3).to(device),
           "model_for_PT": AutoModelForMaskedLM.from_pretrained('ProsusAI/finbert').to(device),
           "name": "Finbert"}#FinBert
-
 models = [model0, model1, model2]
+
+PT_model0 = {"save_directory": "./Saved_models/pre_trained/distilroberta-finetuned-financial-news-sentiment-analysis",
+          "name": "distilroberta-finetuned-financial-news-sentiment-analysis"}
+PT_model1 = {"save_directory": "./Saved_models/pre_trained/stock-news-distilbert",
+          "name": "stock-news-distilbert"}
+PT_model2 = {"save_directory": "./Saved_models/pre_trained/Finbert",
+          "name": "Finbert"}
+PT_models = [PT_model0, PT_model1, PT_model2]
+
+PT_FT_model0 = {"save_directory": "./Saved_models/pre_trained/distilroberta-finetuned-financial-news-sentiment-analysis",
+          "name": "distilroberta-finetuned-financial-news-sentiment-analysis"}
+
+LORA_FLAG = 0
+PRE_TRAIN_FLAG = 1
+NUM_TRAIN_EPOCH = 3
+NUM_DATASETS = 4 #excludes the back-translated datasets
 
 # LORA:
 lora_rank = [4, 8, 16]
@@ -73,65 +90,81 @@ idx_lora = 0
 lora_config = LoraConfig(task_type=TaskType.SEQ_CLS, r=lora_rank[idx_lora], lora_alpha=lora_alpha[idx_lora],
                          lora_dropout=lora_dropout[idx_lora])
 
-FPB = load_dataset("financial_phrasebank", 'sentences_75agree')['train']
+FPB = load_dataset("financial_phrasebank", 'sentences_75agree')['train'].rename_column('sentence', 'text')
 train_FPB, test_FPB = FPB.train_test_split(test_size=0.3, seed=SEED).values()
 
+# Set up training arguments
+training_args = TrainingArguments(
+    output_dir="./train_checkpoints",
+    learning_rate=2e-5,
+    per_device_train_batch_size=8,
+    num_train_epochs=NUM_TRAIN_EPOCH,
+    weight_decay=0.01,
+    save_strategy="epoch",
+    save_steps=500,
+)
+# Set up evaluation arguments
+evaluation_args = TrainingArguments(
+    output_dir="./eval_checkpoints",
+    per_device_eval_batch_size=8,
+    logging_dir='./logs',
+    do_eval=True
+)
+# clean the URLs from fiqa dataset and the "user" word from stock-market sentiment dataset
+def clean_dataset(dataset, idx):
+    if idx == 0: #fiqa
+        def remove_https(text):
+            url_pattern = re.compile(r'https://\S+')
+            return url_pattern.sub(r'', text)
+        def clean_sentence(example):
+            example['text'] = remove_https(example['text'])
+            return example
 
-def check_checkpoints():
-    def compute_metrics(p):
-        preds = np.argmax(p.predictions, axis=1)
-        return {"accuracy": (preds == p.label_ids).mean()}
+        cleaned_dataset = dataset.map(lambda example: clean_sentence(example))
 
-    checkpoint_dir1 = "./train_checkpoints/checkpoint-303"
-    checkpoint_dir2 = "./train_checkpoints/checkpoint-606"
-    checkpoint_dir3 = "./train_checkpoints/checkpoint-909"
-    model1 = AutoModelForSequenceClassification.from_pretrained(checkpoint_dir1)
-    model2 = AutoModelForSequenceClassification.from_pretrained(checkpoint_dir2)
-    model3 = AutoModelForSequenceClassification.from_pretrained(checkpoint_dir3)
-    models = [model1, model2, model3]
+    elif idx == 2: #stock-market sentiment dataset
+        def remove_word(text):
+            word_pattern = re.compile(r'\b{}\b'.format(re.escape('user')), flags=re.IGNORECASE)
+            return word_pattern.sub(r'', text)
 
-    tokenizer = AutoTokenizer.from_pretrained("FacebookAI/roberta-base")
-    data_collator = DataCollatorWithPadding(tokenizer=tokenizer, return_tensors='pt')
-    tokenized_test =test_FPB.map(lambda x: tokenize_function(tokenizer, x, 3), batched=True)
+        cleaned_dataset = dataset.map(lambda example: {'text': remove_word(example['text'])})
+    return cleaned_dataset
 
+# Receive a sentence and back translate it from French
+def back_translate(sentence):
+    src_lang = 'en'
+    tgt_lang = 'fr'
+    translator_to_tgt = Translator(from_lang=src_lang, to_lang=tgt_lang)
+    translator_to_src = Translator(from_lang=tgt_lang, to_lang=src_lang)
 
-    output_dir = "./results/checkpoints"
+    # Translate to the chosen language
+    translated_text = translator_to_tgt.translate(sentence)
 
-    training_args = TrainingArguments(
-        output_dir=output_dir,
-        per_device_train_batch_size=8,
-        per_device_eval_batch_size=8,
-        num_train_epochs=3,
-        save_steps=1000,  # Save checkpoint every 1000 steps
-        save_total_limit=2  # Limit the total amount of checkpoints
-    )
+    # Translate back to the original language
+    back_translated_text = translator_to_src.translate(translated_text)
 
-    for model in models:
-        trainer = Trainer(
-            model=model,
-            args=training_args,
-            tokenizer=tokenizer,
-            data_collator=data_collator,
-            eval_dataset=tokenized_test,
-            compute_metrics=compute_metrics
-        )
+    return back_translated_text
 
-        print(trainer.evaluate())
+# creates the back_translated datasets
+def create_extended_datasets():
+    for idx in range(0,NUM_DATASETS):
+        dataset = get_dataset(idx)
 
-# get the initialized tokenizer
-# def get_tokenizer(name):
-#     return AutoTokenizer.from_pretrained(name)
+        def back_translate_example(example):
+            example['text'] = back_translate(example['text'])
+            return example
+
+        translated_dataset = dataset.map(lambda example: back_translate_example(example))
+
+        save_dataset_directory = "Data/"
+        os.makedirs(save_dataset_directory, exist_ok=True)
+
+        csv_filename = os.path.join(save_dataset_directory, f"translated_dataset_{idx}.csv")
+        translated_dataset.to_csv(csv_filename, index=False)
 
 # Tokenize the datasets for each dataset
-def tokenize_function(tokenizer, examples, ds):
-    if ds == 0:  #fiqa-sentiment-classification
-        output = tokenizer(examples['sentence'], padding='max_length', truncation=True, max_length=512)
-    elif ds == 1:  #financial_phrasebank_75_agree
-        output = tokenizer(examples['sentence'], padding='max_length', truncation=True, max_length=512)
-    elif ds == 2:  #Stock-Market Sentiment Dataset
-        output = tokenizer(examples['text'], padding='max_length', truncation=True, max_length=512)
-    else: #Aspect based Sentiment Analysis for Financial News
-        output = tokenizer(examples['text'], padding='max_length', truncation=True, max_length=512)
+def tokenize_function(tokenizer, examples):
+    output = tokenizer(examples['text'], padding='max_length', truncation=True, max_length=512)
     return output
 
 def encode_labels(example, ds):
@@ -173,19 +206,33 @@ def compute_metrics(eval_pred):
 
 def get_dataset(idx):
     if idx == 0: #fiqa-sentiment-classification
-        train_dataset = load_dataset("ChanceFocus/fiqa-sentiment-classification", split='train')
-        valid_dataset = load_dataset("ChanceFocus/fiqa-sentiment-classification", split='valid')
-        test_dataset = load_dataset("ChanceFocus/fiqa-sentiment-classification", split='test')
+        train_dataset = load_dataset("ChanceFocus/fiqa-sentiment-classification", split='train').rename_column('sentence', 'text')
+        valid_dataset = load_dataset("ChanceFocus/fiqa-sentiment-classification", split='valid').rename_column('sentence', 'text')
+        test_dataset = load_dataset("ChanceFocus/fiqa-sentiment-classification", split='test').rename_column('sentence', 'text')
         concatenate_dataset= concatenate_datasets([train_dataset, valid_dataset, test_dataset])
         dataset = concatenate_dataset.filter(lambda example: example['type'] == 'headline')
+        dataset = clean_dataset(dataset, idx)
     elif idx == 1: #financial_phrasebank_75_agree
         dataset = train_FPB
-    elif idx ==2: #Stock-Market Sentiment Dataset
+    elif idx == 2: #Stock-Market Sentiment Dataset
         df = pd.read_csv('Data/Stock-Market Sentiment Dataset.csv')
         df.rename(columns={'Text': 'text', 'Sentiment': 'label'}, inplace=True)
         dataset = Dataset.from_pandas(df)
-    else: #Aspect based Sentiment Analysis for Financial News
+        dataset = clean_dataset(dataset, idx)
+    elif idx == 3: #Aspect based Sentiment Analysis for Financial News
         df = pd.read_csv('Data/Processed_Financial_News.csv')
+        dataset = Dataset.from_pandas(df)
+    elif idx == 4: #Back-Translated fiqa-sentiment-classification
+        df = pd.read_csv('Data/translated_dataset_0.csv')
+        dataset = Dataset.from_pandas(df)
+    elif idx == 5: #Back-Translated financial_phrasebank_75_agree
+        df = pd.read_csv('Data/translated_dataset_1.csv')
+        dataset = Dataset.from_pandas(df)
+    elif idx == 6: #Back-Translated Stock-Market Sentiment Dataset
+        df = pd.read_csv('Data/translated_dataset_2.csv')
+        dataset = Dataset.from_pandas(df)
+    else: #Back-Translated Aspect based Sentiment Analysis for Financial News
+        df = pd.read_csv('Data/translated_dataset_3.csv')
         dataset = Dataset.from_pandas(df)
     return dataset
 
@@ -226,7 +273,7 @@ def pre_train(model, pre_train_dataset):
 
     tokenized_dataset = pre_train_dataset.map(lambda x: tokenize_pre_train(tokenizer, x), batched=True)
 
-    training_args = TrainingArguments(
+    pre_training_args = TrainingArguments(
         output_dir='./preTrain_checkpoints',
         overwrite_output_dir=True,
         num_train_epochs=3,
@@ -238,7 +285,7 @@ def pre_train(model, pre_train_dataset):
 
     trainer = Trainer(
         model=model,
-        args=training_args,
+        args=pre_training_args,
         train_dataset=tokenized_dataset,
         tokenizer=tokenizer,
         data_collator=data_collator,
@@ -255,57 +302,35 @@ def pre_train(model, pre_train_dataset):
 
 def train_test_all_models(NUM_TRAIN_EPOCH):
 
-    # Set up training arguments
-    training_args = TrainingArguments(
-        output_dir="./train_checkpoints",
-        learning_rate=2e-5,
-        per_device_train_batch_size=8,
-        num_train_epochs=NUM_TRAIN_EPOCH,
-        weight_decay=0.01,
-        save_strategy="epoch",
-        save_steps=500,
-    )
-    # Set up evaluation arguments
-    evaluation_args = TrainingArguments(
-        output_dir = "./eval_checkpoints",
-        per_device_eval_batch_size=8,
-        logging_dir='./logs',
-        do_eval=True
-    )
+    if(PRE_TRAIN_FLAG):
+        results_dir = "./Evaluation_results/PT + FT/"
+        save_directory = "./Saved_models/PT + FT/" #need to add the model_name
+    else:
+        results_dir = "./Evaluation_results/FT/"
+        save_directory = "./Saved_models/FT/"
 
-    NUM_DATASETS = 4
-    LORA_FLAG = 0
-    PRE_TRAIN_FLAG = 1
+    os.makedirs(save_directory, exist_ok=True)
+    os.makedirs(results_dir, exist_ok=True)
 
     test_dataset = test_FPB
 
-    if(PRE_TRAIN_FLAG):
-        pre_train_dataset = prepare_for_pre_train()
-
-    for model in models:
-
-        model_name = model["name"]
-        tokenizer = AutoTokenizer.from_pretrained(model["tokenizer"])
-        data_collator = DataCollatorWithPadding(tokenizer=tokenizer, return_tensors='pt')
-        tokenized_test_dataset = test_dataset.map(lambda x: tokenize_function(tokenizer, x, 1), batched=True)
-
+    for model in PT_models:
         if (LORA_FLAG):
             chosen_model = get_peft_model(model["model"], lora_config)  # applying LORA
         else:
-            chosen_model = model["model"]
+            # chosen_model = model["model"]
+            chosen_model = AutoModelForSequenceClassification.from_pretrained(model["save_directory"])# edit for the PT+FT
+        model_name = model["name"]
+        # tokenizer = AutoTokenizer.from_pretrained(model["tokenizer"])
+        tokenizer = AutoTokenizer.from_pretrained(model["save_directory"])# edit for the PT+FT
+        data_collator = DataCollatorWithPadding(tokenizer=tokenizer, return_tensors='pt')
+        tokenized_test_dataset = test_dataset.map(lambda x: tokenize_function(tokenizer, x), batched=True)
 
-        if (PRE_TRAIN_FLAG):
-            print("About to start pre-training")
-            pre_train(model, pre_train_dataset)
 
-
-        for idx in range(0, NUM_DATASETS):
+        for idx in range(0, NUM_DATASETS * 2): #includes the Back-Translated DS
             dataset = get_dataset(idx)
             encoded_dataset = dataset.map(lambda x: encode_labels(x, idx))
-            tokenized_train_dataset = encoded_dataset.map(lambda x: tokenize_function(tokenizer, x, idx), batched=True)
-
-            # Initialize the data collator
-            data_collator = DataCollatorWithPadding(tokenizer=tokenizer, return_tensors='pt')
+            tokenized_train_dataset = encoded_dataset.map(lambda x: tokenize_function(tokenizer, x), batched=True)
 
             # Initialize the Trainer
             trainer = Trainer(
@@ -322,10 +347,7 @@ def train_test_all_models(NUM_TRAIN_EPOCH):
         print("FT is completed, the saved model was saved.")
         # END OF TRAINING
 
-        if PRE_TRAIN_FLAG: save_directory = "./Saved_models/PT + FT/" + model_name
-        else: save_directory = "./Saved_models/FT/" + model_name
-        os.makedirs(save_directory, exist_ok=True)
-        trainer.save_model(save_directory)
+        trainer.save_model(save_directory+"/"+model_name)
 
         # Initialize the Trainer for the evaluation phase
         trainer = Trainer(
@@ -343,10 +365,7 @@ def train_test_all_models(NUM_TRAIN_EPOCH):
             "model_name": model_name,
             "results": trainer.evaluate()
         }
-        if(PRE_TRAIN_FLAG): results_dir = "./Evaluation_results/PT + FT/"
-        else : results_dir = "./Evaluation_results/FT"
 
-        os.makedirs(results_dir, exist_ok=True)
         results_file_name = model_name + ".txt"
         results_file_path = os.path.join(results_dir, results_file_name)
 
@@ -355,43 +374,15 @@ def train_test_all_models(NUM_TRAIN_EPOCH):
 
         print(f"Evaluation results for the model: {model_name} saved to {results_file_name}")
 
-# def pre_train1(model, pre_train_datasets):
-#
-#     tokenizer = get_tokenizer(model["tokenizer"])
-#     data_collator = DataCollatorForLanguageModeling(
-#         tokenizer=tokenizer,
-#         mlm=True,
-#         mlm_probability=0.15
-#     )
-#
-#     tokenized_dataset = pre_train_datasets.map(lambda x: tokenize_pre_train(tokenizer, x), batched=True)['train']
-#     print(tokenized_dataset)
-#
-#     training_args = TrainingArguments(
-#         output_dir='./preTrain_checkpoints',
-#         overwrite_output_dir=True,
-#         num_train_epochs=3,
-#         per_device_train_batch_size=8,
-#         save_steps=10_000,
-#     )
-#
-#     model = model["model"]
-#
-#     trainer = Trainer(
-#         model=model,
-#         args=training_args,
-#         train_dataset=tokenized_dataset,
-#         tokenizer=tokenizer,
-#         data_collator=data_collator,
-#     )
-#
-#     trainer.train()
-#
-#     return model
 
-# train_test_all_models(3)
-dataset = prepare_for_pre_train()
-model = model2
-pre_train(model, dataset)
+# train_test_all_models(NUM_TRAIN_EPOCH)
+create_extended_datasets()
+def main():
+    if(PRE_TRAIN_FLAG):
+        pre_train_dataset = prepare_for_pre_train()
+        for model in models:
+            pre_train(model, pre_train_dataset)
+    train_test_all_models(NUM_TRAIN_EPOCH)
+
 
 

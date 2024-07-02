@@ -5,7 +5,6 @@ import torch
 from transformers import TrainingArguments, AutoTokenizer, AutoModelForSequenceClassification, DataCollatorWithPadding, Trainer
 from datasets import load_metric, load_dataset, concatenate_datasets
 import numpy as np
-from peft import LoraConfig, TaskType, get_peft_model
 import json
 
 SEED = 1694
@@ -72,18 +71,14 @@ def compute_metrics(eval_pred):
   }
 
 
-model0 = {"save_directory": "./Saved_modelspre_trained/distilroberta-finetuned-financial-news-sentiment-analysis",
+model0 = {"save_directory": "./Saved_models/pre_trained/distilroberta-finetuned-financial-news-sentiment-analysis",
           "name": "distilroberta-finetuned-financial-news-sentiment-analysis"}
-model1 = {"save_directory": "./Saved_modelspre_trained/stock-news-distilbert",
+model1 = {"save_directory": "./Saved_models/pre_trained/stock-news-distilbert",
           "name": "stock-news-distilbert"}
-model2 = {"save_directory": "./Saved_modelspre_trained/Finbert",
+model2 = {"save_directory": "./Saved_models/pre_trained/Finbert",
           "name": "Finbert"}
 
 models = [model0, model1, model2]
-
-save_directory = "./saved_model"
-loaded_model = AutoModelForSequenceClassification.from_pretrained(save_directory)
-loaded_tokenizer = AutoTokenizer.from_pretrained(save_directory)
 
 # LORA:
 # lora_rank = [4, 8, 16]
@@ -138,7 +133,7 @@ for model in models:
         "results" : trainer.evaluate()
     }
 
-    results_dir = "./Evaluation_results/Baselines"
+    results_dir = "./Evaluation_results/Baselines/with_PT"
     os.makedirs(results_dir, exist_ok=True)
     results_file_name = model_name + ".txt"
     results_file_path = os.path.join(results_dir, results_file_name)
