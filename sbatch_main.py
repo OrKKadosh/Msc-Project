@@ -25,7 +25,6 @@
 from csv import excel
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 import nltk
-import wandb
 from nltk.corpus import sentiwordnet as swn
 nltk.download('sentiwordnet')
 nltk.download('wordnet')
@@ -54,26 +53,12 @@ os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "/cs_storage/orkados/plucky-mode-
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
 
-hyper_params_bank = {"learning_rate_model0": [2e-5,3e-5, 5e-5], "learning_rate_model1":[2e-5,3.5e-5, 5e-5], "learning_rate_model2":[1e-5,3e-5, 4.5e-5, 6e-5], "train_batch_size":[8, 16, 32, 64], "weight_decay": [0.001, 0.01, 0.1], "eval_batch_size":[8, 16, 32, 64], "mlm_probability":[0.1, 0.15, 0.2],
+hyper_params_bank = {"learning_rate_model0": [1e-5,3e-5, 5e-5], "learning_rate_model1":[2e-5,3.5e-5, 5e-5], "learning_rate_model2":[1e-5,3e-5, 4.5e-5, 6e-5], "train_batch_size":[8, 16, 32, 64], "weight_decay": [0.001, 0.01, 0.1], "eval_batch_size":[8, 16, 32, 64], "mlm_probability":[0.1, 0.15, 0.2],
                 "pre_train_batch_size":[8, 16, 32, 64], "lora_rank":[4, 8, 16], "lora_alphas_to_multiply_by_rank":[1, 1.5, 2], "lora_dropout":[0.0, 0.05, 0.1, 0.2]}
 
 SEED = 1694
 np.random.seed(SEED)
 torch.manual_seed(SEED)
-
-# Initialize wandb
-wandb.init(
-    project="your-project-name",
-    config={
-        "learning_rate": 2e-5,
-        "architecture": "BERT",
-        "dataset": "Financial Sentiment",
-        "epochs": 3,
-        "batch_size": 8,
-        "seed": SEED,
-    }
-)
-
 
 base_model0 = {"tokenizer": "FacebookAI/roberta-base",
           "model": AutoModelForSequenceClassification.from_pretrained('mrm8488/distilroberta-finetuned-financial-news-sentiment-analysis', num_labels=3).to(device),
@@ -110,7 +95,7 @@ PRE_TRAIN_FLAG = 1
 NUM_TRAIN_EPOCH = 3
 NUM_DATASETS = 4 #excludes the back-translated datasets
 
-# LORA: I should try the LORA only for the FinBert since it has ~110 parameters.
+# LORA:
 lora_rank = [4, 8, 16]
 lora_alpha = lora_rank * 2
 # lora_alphas = lora_rank * [1, 1.5, 2]
@@ -158,7 +143,7 @@ nltk.download('punkt')
 
 def create_negation_datasets():
 
-    def process_sentence(example):    # Example: ("i don't like to go swimming") -> ("i do dislike to go swimming")
+    def process_sentence(sentence):    # Example: ("i don't like to go swimming") -> ("i do dislike to go swimming")
 
         def tokenize_sentence(sentence):
             # Tokenize the sentence into words
@@ -191,16 +176,16 @@ def create_negation_datasets():
                     i += 1
             return new_tokens
 
-        tokenized_sentence = tokenize_sentence(example['text'])
+        tokenized_sentence = tokenize_sentence(sentence)
         modified_tokens = replace_with_opposite(tokenized_sentence)
-        example['text'] = ' '.join(modified_tokens)
-        return example
+        modified_sentence = ' '.join(modified_tokens)
+        return modified_sentence
 
     for idx in range(NUM_DATASETS):
         dataset = get_dataset(idx)
-        negation_dataset = dataset.map(lambda example : process_sentence(example))
+        negation_dataset = dataset.map(lambda example : process_sentence(example['text']))
 
-        save_dataset_directory = "Data/Negation/"
+        save_dataset_directory = "Data/"
         os.makedirs(save_dataset_directory, exist_ok=True)
         csv_filename = os.path.join(save_dataset_directory, f"negation_dataset_{idx}.csv")
         negation_dataset.to_csv(csv_filename, index=False)
@@ -231,25 +216,99 @@ def clean_dataset(dataset, idx):
         cleaned_dataset = dataset.map(lambda example: {'text': remove_word(example['text'])})
     return cleaned_dataset
 
-#Goes over the FT-datasets, back-translates them and saves them as ./Data/translated_dataset_{idx}.csv
-def create_back_translated_datasets():
+# Receive a sentence and back translate it from French
+
+# Goes over the FT-datasets and back-translates them
+def create_extended_datasets():
     request_count = 0
 
-    for idx in range(0, NUM_DATASETS):
-        # changes the score to label
-        def fix_fiqa_dataset(example):
-            if example['score'] <= -0.4:
-                example['label'] = 0
-            elif example['score'] <= 0.5:
-                example['label'] = 1
-            else:
-                example['label'] = 2
-            return example #
-
+    for idx in range(1, NUM_DATASETS):
         dataset = get_dataset(idx)
-        if idx == 0:#change the score to label
-            dataset = dataset.map(lambda example: fix_fiqa_dataset(example))
-            dataset = dataset.remove_columns(['_id', 'target', 'aspect', 'type'])
+
+        def back_translate_example(example, dataset):
+
+            def back_translate(sentence):
+                def translate(text, source_lang, target_lang):
+
+                    # Define the LibreTranslate API endpoint
+                    endpoint = 'https://libretranslate.com/translate'
+
+                    # Your API key
+                    api_key = 'd3a68b85-8818-4f0c-b931-2cfb436429b6'
+
+                    # Define the headers with the API key
+                    headers = {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'accept': 'application/json'
+                    }
+
+                    data = {
+                        'q': text,
+                        'source': source_lang,
+                        'target': target_lang,
+                        'format': 'text',
+                        'api_key': api_key
+                    }
+
+                    try:
+                        response = requests.post(endpoint, headers=headers, data=data)
+                        response.raise_for_status()  # Check for HTTP errors
+                    except requests.exceptions.RequestException as e:
+                        print(f"Request failed: {e}")
+                        return None
+
+                    response_json = response.json()
+
+                    if 'translatedText' in response_json:
+                        return response_json['translatedText']
+                    else:
+                        print("Translation failed or 'translatedText' key not found in the response.")
+                        return None
+
+                src_lang = 'en'
+                tgt_lang = 'fr'
+
+                translated_text = translate(sentence, src_lang, tgt_lang)
+                if translated_text is None:
+                    return None
+
+                back_translated_text = translate(translated_text, tgt_lang, src_lang)
+                if back_translated_text is None:
+                    return None
+
+                return back_translated_text
+
+            nonlocal request_count
+            example['text'] = back_translate(example['text'])
+            if example['text'] is None: #for the case where we reached the limit of the API
+                save_dataset_directory = "Data/"
+                os.makedirs(save_dataset_directory, exist_ok=True)
+                csv_filename = os.path.join(save_dataset_directory, f"translated_dataset_not_finished{idx}.csv")
+                dataset.to_csv(csv_filename, index=False)
+
+            request_count += 2  # 2 requests per example (en->fr and fr->en)
+
+            # Check if 80 requests have been made and pause if necessary
+            if request_count >= 20:
+                time.sleep(30)
+                request_count = 0  # Reset request count after sleeping
+
+            return example
+
+        translated_dataset = dataset.map(lambda example: back_translate_example(example, dataset))
+
+        save_dataset_directory = "Data/"
+        os.makedirs(save_dataset_directory, exist_ok=True)
+
+        csv_filename = os.path.join(save_dataset_directory, f"translated_dataset_{idx}.csv")
+        translated_dataset.to_csv(csv_filename, index=False)
+
+
+def create_extended_datasets1():
+    request_count = 0
+
+    for idx in range(2, NUM_DATASETS):
+        dataset = get_dataset(idx)
 
         def back_translate_example(example, dataset):
 
@@ -301,6 +360,8 @@ def tokenize_function(tokenizer, examples):
 def encode_labels(example, ds):
 
     # Encode labels as integers according to: 0-negative, 1-neutral, 2-positive
+    # label_dict0 = {0: 1, 1: 2, 2: 0}  # financial-tweets-sentiment
+    # label_dict1 = {0: 1, 1: 2, 2: 0}  # synthetic-financial-tweets-sentiment
 
     label_dict2 = {1:2, -1:0}  # Stock-Market Sentiment Dataset
     if ds == 0:  #fiqa-sentiment-classification
@@ -310,9 +371,8 @@ def encode_labels(example, ds):
             example['label'] = 1
         else:
             example['label'] = 2
-    elif ds == 2 or ds == 6 :  #Stock-Market Sentiment Dataset
+    elif ds == 2:  #Stock-Market Sentiment Dataset
         example['label'] = label_dict2[example['label']]
-
     return example
 
 def compute_metrics(eval_pred):
@@ -335,14 +395,6 @@ def compute_metrics(eval_pred):
     }
 
 def get_dataset(idx):
-    def clean_text(example, idx):
-        if idx in (5,6,7):
-            example['text'] = example['text'].replace('&#39;', "'")
-        if idx in (5,6):
-            # Remove non-English characters using regular expression
-            example['text'] = re.sub(r'[^A-Za-z0-9\s.,!?\'\"-]', '', example['text'])
-        return example
-
     if idx == 0: #fiqa-sentiment-classification
         train_dataset = load_dataset("ChanceFocus/fiqa-sentiment-classification", split='train').rename_column('sentence', 'text')
         valid_dataset = load_dataset("ChanceFocus/fiqa-sentiment-classification", split='valid').rename_column('sentence', 'text')
@@ -362,31 +414,28 @@ def get_dataset(idx):
         dataset = Dataset.from_pandas(df)
 
     elif idx == 4: #Back-Translated fiqa-sentiment-classification
-        df = pd.read_csv('Data/back_translated/translated_dataset_0.csv')
+        df = pd.read_csv('Data/translated_dataset_0.csv')
         dataset = Dataset.from_pandas(df)
     elif idx == 5: #Back-Translated financial_phrasebank_75_agree
-        df = pd.read_csv('Data/back_translated/translated_dataset_1.csv')
+        df = pd.read_csv('Data/translated_dataset_1.csv')
         dataset = Dataset.from_pandas(df)
-        dataset = dataset.map(lambda example: clean_text(example, idx))
     elif idx == 6: #Back-Translated Stock-Market Sentiment Dataset
-        df = pd.read_csv('Data/back_translated/translated_dataset_2.csv')
+        df = pd.read_csv('Data/translated_dataset_2.csv')
         dataset = Dataset.from_pandas(df)
-        dataset = dataset.map(lambda example: clean_text(example, idx))
     elif idx == 7: #Back-Translated Aspect based Sentiment Analysis for Financial News
-        df = pd.read_csv('Data/back_translated/translated_dataset_3.csv')
+        df = pd.read_csv('Data/translated_dataset_3.csv')
         dataset = Dataset.from_pandas(df)
-        dataset = dataset.map(lambda example: clean_text(example, idx))
 
-    elif idx == 8: #negation_fiqa-sentiment-classification
+    elif idx == 8: #fiqa-sentiment-classification
         df = pd.read_csv('Data/negation_dataset_0.csv')
         dataset = Dataset.from_pandas(df)
-    elif idx == 9: #negation_financial_phrasebank_75_agree
+    elif idx == 9: #financial_phrasebank_75_agree
         df = pd.read_csv('Data/negation_dataset_1.csv')
         dataset = Dataset.from_pandas(df)
-    elif idx == 10: #negation_Stock-Market Sentiment Dataset
+    elif idx == 10: #Stock-Market Sentiment Dataset
         df = pd.read_csv('Data/negation_dataset_2.csv')
         dataset = Dataset.from_pandas(df)
-    else: #idx == 11: #negation_Aspect based Sentiment Analysis for Financial News
+    else: #idx == 11: #Aspect based Sentiment Analysis for Financial News
         df = pd.read_csv('Data/negation_dataset_3.csv')
         dataset = Dataset.from_pandas(df)
     return dataset
@@ -394,22 +443,21 @@ def get_dataset(idx):
 def tokenize_pre_train(tokenizer, example):
     return tokenizer(example['text'], padding='max_length', truncation=True, max_length=512)
 
-# Randomly deletes a single word from the dataset
 def random_deletion(dataset):
     def rd(example):
         words = example['text'].split()
-        if len(words) <= 1: # a sentence of one word
+        if len(words) == 1: # a sentence of one word
             return example
         else:
             deletion_idx = random.randint(0, len(words) - 1)
             del words[deletion_idx]
-            example['text'] = ' '.join(words)
+            example['text'] = ''.join(words)
             return example
 
     RID_dataset = dataset.map(lambda example: rd(example))
     return RID_dataset
 
-# loading the datasets and removing unnecessary cols, returns a concatenate dataset of the pre-train datasets
+# loading the datasets and removing unnecessary cols
 # DIDNT YET PRE-TRAINED THE MODELS OVER THE RANDOMLY DELETED DATASETS
 def prepare_for_pre_train():
 
@@ -421,17 +469,9 @@ def prepare_for_pre_train():
     RID_pretrain_dataset0 = random_deletion(pretrain_dataset0)
     RID_pretrain_dataset1 = random_deletion(pretrain_dataset1)
     RID_pretrain_dataset2 = random_deletion(pretrain_dataset2)
-    RID_pretrain_datasets = [RID_pretrain_dataset0, RID_pretrain_dataset1, RID_pretrain_dataset2]
-
-    # Use the following code only once, to check the rid_datasets, to see it really randomly deletes a word in the samples
-    # save_dataset_directory = "Data/RID_PreTrain/"
-    # os.makedirs(save_dataset_directory, exist_ok=True)
-    # for idx in range(3):
-    #     csv_filename = os.path.join(save_dataset_directory, f"RID_pretrain_dataset_{idx}.csv")
-    #     RID_pretrain_datasets[idx].to_csv(csv_filename, index=False)
-
 
     pre_train_datasets = [pretrain_dataset0, pretrain_dataset1, pretrain_dataset2, RID_pretrain_dataset0, RID_pretrain_dataset1, RID_pretrain_dataset2]
+    RID_pretrain_datasets = [RID_pretrain_dataset0, RID_pretrain_dataset1, RID_pretrain_dataset2]
 
     concatenated_dataset = concatenate_datasets(pre_train_datasets)
 
@@ -486,8 +526,8 @@ def pre_train(model, pre_train_dataset):
 def train_test_all_models(NUM_TRAIN_EPOCH):
 
     if(PRE_TRAIN_FLAG):
-        results_dir = "./Evaluation_results/PT + FT(with BT)/"
-        save_directory = "./Saved_models/PT + FT(with BT)/" #need to add the model_name
+        results_dir = "./Evaluation_results/PT + FT/"
+        save_directory = "./Saved_models/PT + FT/" #need to add the model_name
     else:
         results_dir = "./Evaluation_results/FT/"
         save_directory = "./Saved_models/FT/"
@@ -502,14 +542,14 @@ def train_test_all_models(NUM_TRAIN_EPOCH):
             chosen_model = get_peft_model(model["model"], lora_config)  # applying LORA
         else:
             # chosen_model = model["model"]
-            chosen_model = AutoModelForSequenceClassification.from_pretrained(model["save_directory"])# edited for the PT+FT
+            chosen_model = AutoModelForSequenceClassification.from_pretrained(model["save_directory"])# edit for the PT+FT
         model_name = model["name"]
         # tokenizer = AutoTokenizer.from_pretrained(model["tokenizer"])
-        tokenizer = AutoTokenizer.from_pretrained(model["save_directory"])# edited for the PT+FT
+        tokenizer = AutoTokenizer.from_pretrained(model["save_directory"])# edit for the PT+FT
         data_collator = DataCollatorWithPadding(tokenizer=tokenizer, return_tensors='pt')
         tokenized_test_dataset = test_dataset.map(lambda x: tokenize_function(tokenizer, x), batched=True)
 
-        for idx in range(0, NUM_DATASETS * 2): #includes the Back-Translated DS
+        for idx in range(0, NUM_DATASETS * 3): #includes the Back-Translated DS & Negation DS
             dataset = get_dataset(idx)
             encoded_dataset = dataset.map(lambda x: encode_labels(x, idx))
             tokenized_train_dataset = encoded_dataset.map(lambda x: tokenize_function(tokenizer, x), batched=True)
@@ -521,15 +561,10 @@ def train_test_all_models(NUM_TRAIN_EPOCH):
                 train_dataset=tokenized_train_dataset,
                 tokenizer=tokenizer,
                 data_collator=data_collator,
-                compute_metrics=compute_metrics
             )
             print(f"About to start FT model: {model_name}, with dataset number: {idx}")
             # Train the model
             trainer.train()
-
-            # Log training metrics to wandb
-            metrics = trainer.state.log_history[-1]
-            wandb.log(metrics)
 
         print("FT is completed, the saved model was saved.")
         # END OF TRAINING
@@ -546,16 +581,11 @@ def train_test_all_models(NUM_TRAIN_EPOCH):
             compute_metrics=compute_metrics,
         )
 
-        evaluation_results = trainer.evaluate()
-
-        # Log evaluation metrics to wandb
-        wandb.log(evaluation_results)
-
         results_with_model = {
             "Lora YES/NO": LORA_FLAG,
             "Pre-Train YES/NO": PRE_TRAIN_FLAG,
             "model_name": model_name,
-            "results": evaluation_results
+            "results": trainer.evaluate()
         }
 
         results_file_name = model_name + ".txt"
@@ -566,28 +596,15 @@ def train_test_all_models(NUM_TRAIN_EPOCH):
 
         print(f"Evaluation results for the model: {model_name} saved to {results_file_name}")
 
-# Initialize wandb run
-wandb.init(project="your-project-name", config={
-    "learning_rate": 2e-5,
-    "architecture": "BERT",
-    "dataset": "Financial Sentiment",
-    "epochs": NUM_TRAIN_EPOCH,
-    "batch_size": 8,
-    "seed": SEED,
-})
 
-train_test_all_models(NUM_TRAIN_EPOCH)
-
-# Finish the wandb run
-wandb.finish()
-
-# pre_train_dataset = prepare_for_pre_train()
-# for model in base_models:
-#     pre_train(model, pre_train_dataset)
-# print("ended pre-train the base models")
-# for model in PT_models:
-#     pre_train(model, pre_train_dataset)
-
+# train_test_all_models(NUM_TRAIN_EPOCH)
+# create_extended_datasets1()
+pre_train_dataset = prepare_for_pre_train()
+for model in base_models:
+    pre_train(model, pre_train_dataset)
+print("ended pre-train the base models")
+for model in PT_models:
+    pre_train(model, pre_train_dataset)
 def main():
     create_negation_datasets()
     if(PRE_TRAIN_FLAG):
@@ -595,4 +612,6 @@ def main():
         for model in base_models:
             pre_train(model, pre_train_dataset)
     train_test_all_models(NUM_TRAIN_EPOCH)
+
+
 
