@@ -4,9 +4,9 @@ import os
 import pandas as pd
 from datetime import datetime
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
-import requests
+# import requests
 import torch
-from newspaper import Article
+# from newspaper import Article
 
 # creates the Dataset which I required from BGU to label
 def create_unlabeled_dataset():
@@ -339,3 +339,5 @@ summarizer = pipeline("summarization", model="facebook/bart-large-cnn")
 # # Display the summary
 # print("Summary:")
 # print(summary[0]['summary_text'])
+
+print("yo")

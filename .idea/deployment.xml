@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
-  <component name="PublishConfigData" autoUpload="Always" serverName="orkados@132.72.45.75:22 password (3)" remoteFilesAllowedToDisappearOnAutoupload="false" confirmBeforeUploading="false" showDifferentInSync="false" showNewOnSourceInSync="false">
+  <component name="PublishConfigData" autoUpload="Always" serverName="orkados@132.72.65.48:22 password" remoteFilesAllowedToDisappearOnAutoupload="false" confirmBeforeUploading="false" showDifferentInSync="false" showNewOnSourceInSync="false">
     <option name="confirmBeforeUploading" value="false" />
     <serverData>
       <paths name="orkados@132.72.42.98:22 password">
@@ -28,6 +28,41 @@
         <serverdata>
           <mappings>
             <mapping deploy="/cs_storage/orkados" local="$PROJECT_DIR$" />
+          </mappings>
+        </serverdata>
+      </paths>
+      <paths name="orkados@132.72.65.48:22 password">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/cs_storage/orkados" local="$PROJECT_DIR$" />
+          </mappings>
+        </serverdata>
+      </paths>
+      <paths name="orkados@132.72.66.154:22 password">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/cs_storage/orkados" local="$PROJECT_DIR$" />
+          </mappings>
+        </serverdata>
+      </paths>
+      <paths name="orkados@132.72.66.73:22 password">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/cs_storage/orkados" local="$PROJECT_DIR$" />
+          </mappings>
+        </serverdata>
+      </paths>
+      <paths name="orkados@132.72.67.225:22 password">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/tmp/pycharm_project_350" local="$PROJECT_DIR$" />
+          </mappings>
+        </serverdata>
+      </paths>
+      <paths name="orkados@132.72.67.225:22 password (2)">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/tmp/pycharm_project_751" local="$PROJECT_DIR$" />
           </mappings>
         </serverdata>
       </paths>

@@ -3,5 +3,5 @@
   <component name="Black">
     <option name="sdkName" value="Remote Python 3.7.16 (sftp://orkados@132.72.42.98:22/home/orkados/.virtualenvs/Msc Project/bin/python)" />
   </component>
-  <component name="ProjectRootManager" version="2" project-jdk-name="Remote Python 3.7.16 (sftp://orkados@132.72.45.75:22/cs_storage/orkados/.conda/envs/my_env/bin/python)" project-jdk-type="Python SDK" />
+  <component name="ProjectRootManager" version="2" project-jdk-name="Remote Python 3.10.15 (sftp://orkados@132.72.65.48:22/cs_storage/orkados/.conda/envs/alon_test3/bin/python)" project-jdk-type="Python SDK" />
 </project>

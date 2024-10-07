@@ -43,7 +43,7 @@ import re
 from peft import LoraConfig, TaskType, get_peft_model
 import json
 import pandas as pd
-from datasets import load_metric
+import evaluate
 from google.cloud import translate_v2 as translate
 
 
@@ -316,10 +316,10 @@ def encode_labels(example, ds):
     return example
 
 def compute_metrics(eval_pred):
-    accuracy_metric = load_metric("accuracy")
-    precision_metric = load_metric("precision")
-    recall_metric = load_metric("recall")
-    f1_metric = load_metric("f1")
+    accuracy_metric = evaluate.load("accuracy")
+    precision_metric = evaluate.load("precision")
+    recall_metric = evaluate.load("recall")
+    f1_metric = evaluate.load("f1")
 
     logits, labels = eval_pred
     predictions = np.argmax(logits, axis=-1)
@@ -589,6 +589,7 @@ wandb.finish()
 #     pre_train(model, pre_train_dataset)
 
 def main():
+    print("hey")
     create_negation_datasets()
     if(PRE_TRAIN_FLAG):
         pre_train_dataset = prepare_for_pre_train()
