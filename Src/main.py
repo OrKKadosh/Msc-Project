@@ -30,7 +30,7 @@ from nltk.corpus import sentiwordnet as swn
 nltk.download('sentiwordnet')
 nltk.download('wordnet')
 import os
-from transformers import DataCollatorForLanguageModeling
+from transformers import DataCollatorForLanguageModeling, LlamaForCausalLM
 import torch
 import time
 from datasets import load_dataset, concatenate_datasets, Dataset
@@ -40,7 +40,7 @@ import numpy as np
 import random
 import requests
 import re
-from peft import LoraConfig, TaskType, get_peft_model
+from peft import LoraConfig, TaskType, get_peft_model, PeftModel
 import json
 import pandas as pd
 import evaluate
@@ -87,7 +87,21 @@ base_model2 = {"tokenizer": "bert-base-uncased",
           "model": AutoModelForSequenceClassification.from_pretrained('ProsusAI/finbert', num_labels=3).to(device),
           "model_for_PT": AutoModelForMaskedLM.from_pretrained('ProsusAI/finbert').to(device),
           "name": "Finbert"}#FinBert
-base_models = [base_model0, base_model1, base_model2]
+base_model3 = {
+    "tokenizer": "NousResearch/Llama-2-13b-hf",
+    "model": PeftModel.from_pretrained(
+        LlamaForCausalLM.from_pretrained(
+            "NousResearch/Llama-2-13b-hf", trust_remote_code=True, device_map="cuda:0", load_in_8bit=True
+        ),
+        "FinGPT/fingpt-sentiment_llama2-13b_lora"
+    ),
+    "name": "FinGPT"}#FinGPT
+base_model4 = {
+    "tokenizer": "SALT-NLP/FLANG-ELECTRA",
+    "model": AutoModelForSequenceClassification.from_pretrained("SALT-NLP/FLANG-ELECTRA", num_labels=3).to(device),
+    "name": "FLANG-ELECTRA"} #Flang-Electra
+
+base_models = [base_model0, base_model1, base_model2, base_model3, base_model4]
 
 PT_model0 = {"save_directory": "./Saved_models/pre_trained/distilroberta-finetuned-financial-news-sentiment-analysis",
           "name": "distilroberta-finetuned-financial-news-sentiment-analysis_PT"}
@@ -139,6 +153,65 @@ evaluation_args = TrainingArguments(
     logging_dir='./logs',
     do_eval=True
 )
+
+# Function to process the model outputs
+def extract_sentiment_from_generated_text(generated_text):
+    # Split the output to find the sentiment after the 'Answer: ' part
+    if "Answer: " in generated_text:
+        return generated_text.split("Answer: ")[-1].strip().lower()
+    return "Error"
+
+# Define a new compute metrics function that works with text generation
+def compute_metrics_for_instruction_based(eval_pred):
+    # Get the generated texts (instead of logits)
+    generated_texts = eval_pred.predictions
+    references = eval_pred.label_ids
+
+    # Convert the generated text to labels (0: negative, 1: neutral, 2: positive)
+    predictions = []
+    for text in generated_texts:
+        sentiment = extract_sentiment_from_generated_text(text)
+        if sentiment == 'positive':
+            predictions.append(2)
+        elif sentiment == 'negative':
+            predictions.append(0)
+        else:
+            predictions.append(1)
+
+    # Compute accuracy, precision, recall, and f1
+    accuracy_metric = evaluate.load("accuracy")
+    precision_metric = evaluate.load("precision")
+    recall_metric = evaluate.load("recall")
+    f1_metric = evaluate.load("f1")
+
+    accuracy = accuracy_metric.compute(predictions=predictions, references=references)
+    precision = precision_metric.compute(predictions=predictions, references=references, average='macro')
+    recall = recall_metric.compute(predictions=predictions, references=references, average='macro')
+    f1 = f1_metric.compute(predictions=predictions, references=references, average='macro')
+
+    return {
+        'accuracy': accuracy['accuracy'],
+        'precision': precision['precision'],
+        'recall': recall['recall'],
+        'f1': f1['f1']
+    }
+
+
+# Function to create prompts for this specific model (with instruction-based input)
+def create_instruction_based_prompt(text):
+    prompt = f'''Instruction: What is the sentiment of this news? Please choose an answer from {{negative/neutral/positive}}.
+    Input: {text}
+    Answer: '''
+    return prompt
+
+def preprocess_instruction_based_dataset(examples, tokenizer):
+    # Create the instruction-based prompts
+    examples['text'] = [create_instruction_based_prompt(text) for text in examples['text']]
+    # Tokenize the instruction-based prompts
+    tokens = tokenizer(examples['text'], return_tensors='pt', padding='max_length', max_length=512, truncation=True)
+    return tokens
+
+
 # VADER Sentiment Analyzer
 # TODO: DIDNT USE YET
 def get_vader_sentiment(text):
@@ -389,6 +462,65 @@ def get_dataset(idx):
     else: #idx == 11: #negation_Aspect based Sentiment Analysis for Financial News
         df = pd.read_csv('Data/negation_dataset_3.csv')
         dataset = Dataset.from_pandas(df)
+    return dataset
+
+def get_dataset_with_fingpt_dataset(idx):
+    def clean_text(example, idx):
+        if idx in (6,7,8):
+            example['text'] = example['text'].replace('&#39;', "'")
+        if idx in (6,7):
+            # Remove non-English characters using regular expression
+            example['text'] = re.sub(r'[^A-Za-z0-9\s.,!?\'\"-]', '', example['text'])
+        return example
+
+    if idx == 0:  # fiqa-sentiment-classification
+        train_dataset = load_dataset("ChanceFocus/fiqa-sentiment-classification", split='train').rename_column('sentence', 'text')
+        valid_dataset = load_dataset("ChanceFocus/fiqa-sentiment-classification", split='valid').rename_column('sentence', 'text')
+        test_dataset = load_dataset("ChanceFocus/fiqa-sentiment-classification", split='test').rename_column('sentence', 'text')
+        concatenate_dataset = concatenate_datasets([train_dataset, valid_dataset, test_dataset])
+        dataset = concatenate_dataset.filter(lambda example: example['type'] == 'headline')
+        dataset = clean_dataset(dataset, idx)
+    elif idx == 1:  # financial_phrasebank_75_agree
+        dataset = train_FPB
+    elif idx == 2:  # Stock-Market Sentiment Dataset
+        df = pd.read_csv('Data/Stock-Market Sentiment Dataset.csv')
+        df.rename(columns={'Text': 'text', 'Sentiment': 'label'}, inplace=True)
+        dataset = Dataset.from_pandas(df)
+        dataset = clean_dataset(dataset, idx)
+    elif idx == 3:  # Aspect based Sentiment Analysis for Financial News
+        df = pd.read_csv('Data/Processed_Financial_News.csv')
+        dataset = Dataset.from_pandas(df)
+    elif idx == 4:  # FinGPT/fingpt-sentiment-train
+        df = pd.read_csv("/cs_storage/orkados/Data/FinGPT_cleaned_dataset.csv")
+        dataset = Dataset.from_pandas(df)
+    elif idx == 5:  # Back-Translated fiqa-sentiment-classification
+        df = pd.read_csv('Data/back_translated/translated_dataset_0.csv')
+        dataset = Dataset.from_pandas(df)
+    elif idx == 6:  # Back-Translated financial_phrasebank_75_agree
+        df = pd.read_csv('Data/back_translated/translated_dataset_1.csv')
+        dataset = Dataset.from_pandas(df)
+        dataset = dataset.map(lambda example: clean_text(example, idx))
+    elif idx == 7:  # Back-Translated Stock-Market Sentiment Dataset
+        df = pd.read_csv('Data/back_translated/translated_dataset_2.csv')
+        dataset = Dataset.from_pandas(df)
+        dataset = dataset.map(lambda example: clean_text(example, idx))
+    elif idx == 8:  # Back-Translated Aspect based Sentiment Analysis for Financial News
+        df = pd.read_csv('Data/back_translated/translated_dataset_3.csv')
+        dataset = Dataset.from_pandas(df)
+        dataset = dataset.map(lambda example: clean_text(example, idx))
+    elif idx == 9:  # negation_fiqa-sentiment-classification
+        df = pd.read_csv('Data/negation_dataset_0.csv')
+        dataset = Dataset.from_pandas(df)
+    elif idx == 10:  # negation_financial_phrasebank_75_agree
+        df = pd.read_csv('Data/negation_dataset_1.csv')
+        dataset = Dataset.from_pandas(df)
+    elif idx == 11:  # negation_Stock-Market Sentiment Dataset
+        df = pd.read_csv('Data/negation_dataset_2.csv')
+        dataset = Dataset.from_pandas(df)
+    else:  # idx == 12: negation_Aspect based Sentiment Analysis for Financial News
+        df = pd.read_csv('Data/negation_dataset_3.csv')
+        dataset = Dataset.from_pandas(df)
+
     return dataset
 
 def tokenize_pre_train(tokenizer, example):

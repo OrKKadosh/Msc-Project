@@ -73,7 +73,9 @@ base_model1 = {"tokenizer": "KernAI/stock-news-distilbert",
               device), "name": f"base_stock-news-distilbert{now}"}
 base_model2 = {"tokenizer": "ProsusAI/finbert", "model": AutoModelForSequenceClassification.from_pretrained(
     'ProsusAI/finbert', num_labels=3).to(device),
-          "name": f"base_Finbert{now}"}
+          "name": f"base_Finbert"}
+# base_model3 =
+# base_model4 =
 
 # base_models = [base_model1]
 base_models = [base_model0, base_model1, base_model2]
