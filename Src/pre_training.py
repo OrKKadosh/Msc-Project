@@ -15,14 +15,14 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
 
 
-base_model0 = {"tokenizer": "FacebookAI/roberta-base",
-          "model": AutoModelForSequenceClassification.from_pretrained('mrm8488/distilroberta-finetuned-financial-news-sentiment-analysis', num_labels=3).to(device),
-          "model_for_PT": AutoModelForMaskedLM.from_pretrained('mrm8488/distilroberta-finetuned-financial-news-sentiment-analysis').to(device),
-          "name": "distilroberta-finetuned-financial-news-sentiment-analysis"}#distilroberta-FT-financial-news-sentiment-analysis
-base_model1 = {"tokenizer": "KernAI/stock-news-distilbert",
-          "model": AutoModelForSequenceClassification.from_pretrained('KernAI/stock-news-distilbert', num_labels=3).to(device),
-          "model_for_PT": AutoModelForMaskedLM.from_pretrained('KernAI/stock-news-distilbert'),
-          "name": "stock-news-distilbert"}#stock-news-distilbert
+# base_model0 = {"tokenizer": "FacebookAI/roberta-base",
+#           "model": AutoModelForSequenceClassification.from_pretrained('mrm8488/distilroberta-finetuned-financial-news-sentiment-analysis', num_labels=3).to(device),
+#           "model_for_PT": AutoModelForMaskedLM.from_pretrained('mrm8488/distilroberta-finetuned-financial-news-sentiment-analysis').to(device),
+#           "name": "distilroberta-finetuned-financial-news-sentiment-analysis"}#distilroberta-FT-financial-news-sentiment-analysis
+# base_model1 = {"tokenizer": "KernAI/stock-news-distilbert",
+#           "model": AutoModelForSequenceClassification.from_pretrained('KernAI/stock-news-distilbert', num_labels=3).to(device),
+#           "model_for_PT": AutoModelForMaskedLM.from_pretrained('KernAI/stock-news-distilbert'),
+#           "name": "stock-news-distilbert"}#stock-news-distilbert
 base_model2 = {"tokenizer": "bert-base-uncased",
           "model": AutoModelForSequenceClassification.from_pretrained('ProsusAI/finbert', num_labels=3).to(device),
           "model_for_PT": AutoModelForMaskedLM.from_pretrained('ProsusAI/finbert').to(device),
@@ -50,7 +50,8 @@ base_model4 = {
     "name": "FLANG-ELECTRA"
 }#FLANG-ELECTRA
 
-base_models = [base_model0, base_model1, base_model2, base_model4] #skipped training finGPT for now.
+# base_models = [base_model0, base_model1, base_model2, base_model4] #skipped training finGPT for now.
+base_models = [base_model2, base_model4] #skipped training finGPT for now.
 
 
 def tokenize_pre_train(tokenizer, example):
@@ -182,10 +183,9 @@ def get_pretrain_dataset():
 
 # ////////////////////// END //////////////////////
 
-import os
 
 def pre_train():
-    print("start pre-training")
+    print("start pre-training at pre_training.py")
     pretrain_dataset, RD_pretrain_dataset = get_pretrain_dataset()
 
     for model in base_models:
@@ -235,22 +235,22 @@ def pre_train():
         model_for_rd_pt = model["model_for_PT"]
 
         # Check if a checkpoint exists for both datasets and continue from the latest one if it does
-        pretrain_last_checkpoint = None
-        rd_pretrain_last_checkpoint = None
-
-        if os.path.exists(pretrain_output_dir):
-            pretrain_last_checkpoint = max(
-                [os.path.join(pretrain_output_dir, d) for d in os.listdir(pretrain_output_dir) if d.startswith("checkpoint")],
-                default=None,
-                key=os.path.getmtime
-            )
-
-        if os.path.exists(rd_pretrain_output_dir):
-            rd_pretrain_last_checkpoint = max(
-                [os.path.join(rd_pretrain_output_dir, d) for d in os.listdir(rd_pretrain_output_dir) if d.startswith("checkpoint")],
-                default=None,
-                key=os.path.getmtime
-            )
+        # pretrain_last_checkpoint = None
+        # rd_pretrain_last_checkpoint = None
+        #
+        # if os.path.exists(pretrain_output_dir):
+        #     pretrain_last_checkpoint = max(
+        #         [os.path.join(pretrain_output_dir, d) for d in os.listdir(pretrain_output_dir) if d.startswith("checkpoint")],
+        #         default=None,
+        #         key=os.path.getmtime
+        #     )
+        #
+        # if os.path.exists(rd_pretrain_output_dir):
+        #     rd_pretrain_last_checkpoint = max(
+        #         [os.path.join(rd_pretrain_output_dir, d) for d in os.listdir(rd_pretrain_output_dir) if d.startswith("checkpoint")],
+        #         default=None,
+        #         key=os.path.getmtime
+        #     )
 
         pretrain_trainer = Trainer(
             model=model_for_pt,
@@ -268,13 +268,13 @@ def pre_train():
             data_collator=data_collator,
         )
 
-        # Start or resume training for the first dataset
-        print(f"starts training model {model_name} with pre-train dataset")
-        if pretrain_last_checkpoint is not None:
-            print(f"Resuming training from checkpoint {pretrain_last_checkpoint} for model {model_name}")
-            pretrain_trainer.train(resume_from_checkpoint=pretrain_last_checkpoint)
-        else:
-            pretrain_trainer.train()
+        # # Start or resume training for the first dataset
+        # print(f"starts training model {model_name} with pre-train dataset")
+        # if pretrain_last_checkpoint is not None:
+        #     print(f"Resuming training from checkpoint {pretrain_last_checkpoint} for model {model_name}")
+        #     pretrain_trainer.train(resume_from_checkpoint=pretrain_last_checkpoint)
+        # else:
+        pretrain_trainer.train()
 
         # Save the final model after pre-training on the first dataset
         pretrain_save_directory = f'./Saved_models/pre_trained/Pre-Trained_{model_name}'
@@ -283,13 +283,13 @@ def pre_train():
         tokenizer.save_pretrained(pretrain_save_directory)
         print(f"model {model_name} has been saved to {pretrain_save_directory}")
 
-        # Start or resume training for the second dataset
-        print(f"starts training model {model_name} with rd_pre-train dataset")
-        if rd_pretrain_last_checkpoint is not None:
-            print(f"Resuming training from checkpoint {rd_pretrain_last_checkpoint} for model {model_name}")
-            rd_pretrain_trainer.train(resume_from_checkpoint=rd_pretrain_last_checkpoint)
-        else:
-            rd_pretrain_trainer.train()
+        # # Start or resume training for the second dataset
+        # print(f"starts training model {model_name} with rd_pre-train dataset")
+        # if rd_pretrain_last_checkpoint is not None:
+        #     print(f"Resuming training from checkpoint {rd_pretrain_last_checkpoint} for model {model_name}")
+        #     rd_pretrain_trainer.train(resume_from_checkpoint=rd_pretrain_last_checkpoint)
+        # else:
+        rd_pretrain_trainer.train()
 
         # Save the final model after pre-training on the second dataset
         rd_pretrain_save_directory = f'./Saved_models/pre_trained/Pre-Trained+RD_{model_name}'
