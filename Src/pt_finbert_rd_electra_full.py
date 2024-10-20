@@ -1,4 +1,3 @@
-import json
 import os
 import random
 
@@ -10,7 +9,7 @@ from peft import PeftModel
 from transformers import AutoModelForSequenceClassification, AutoModelForMaskedLM, LlamaForCausalLM, AutoTokenizer, \
     DataCollatorForLanguageModeling, TrainingArguments, Trainer
 
-print("Running test.py")
+
 # Make sure a GPU is available
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
@@ -24,10 +23,10 @@ print(f"Using device: {device}")
 #           "model": AutoModelForSequenceClassification.from_pretrained('KernAI/stock-news-distilbert', num_labels=3).to(device),
 #           "model_for_PT": AutoModelForMaskedLM.from_pretrained('KernAI/stock-news-distilbert'),
 #           "name": "stock-news-distilbert"}#stock-news-distilbert
-base_model2 = {"tokenizer": "bert-base-uncased",
-          "model": AutoModelForSequenceClassification.from_pretrained('ProsusAI/finbert', num_labels=3).to(device),
-          "model_for_PT": AutoModelForMaskedLM.from_pretrained('ProsusAI/finbert').to(device),
-          "name": "Finbert"}#FinBert
+# base_model2 = {"tokenizer": "bert-base-uncased",
+#           "model": AutoModelForSequenceClassification.from_pretrained('ProsusAI/finbert', num_labels=3).to(device),
+#           "model_for_PT": AutoModelForMaskedLM.from_pretrained('ProsusAI/finbert').to(device),
+#           "name": "Finbert"}#FinBert
 # base_model3 = {
 #     "tokenizer": "NousResearch/Llama-2-13b-hf",
 #     "model": PeftModel.from_pretrained(
@@ -44,15 +43,15 @@ base_model2 = {"tokenizer": "bert-base-uncased",
 #     ),
 #     "name": "FinGPT"
 # } #FinGPT
-# base_model4 = {
-#     "tokenizer": "SALT-NLP/FLANG-ELECTRA",
-#     "model": AutoModelForSequenceClassification.from_pretrained("SALT-NLP/FLANG-ELECTRA", num_labels=3).to(device),
-#     "model_for_PT": AutoModelForMaskedLM.from_pretrained("SALT-NLP/FLANG-ELECTRA").to(device),
-#     "name": "FLANG-ELECTRA"
-# }#FLANG-ELECTRA
+base_model4 = {
+    "tokenizer": "SALT-NLP/FLANG-ELECTRA",
+    "model": AutoModelForSequenceClassification.from_pretrained("SALT-NLP/FLANG-ELECTRA", num_labels=3).to(device),
+    "model_for_PT": AutoModelForMaskedLM.from_pretrained("SALT-NLP/FLANG-ELECTRA").to(device),
+    "name": "FLANG-ELECTRA"
+}#FLANG-ELECTRA
 
 # base_models = [base_model0, base_model1, base_model2, base_model4] #skipped training finGPT for now.
-base_models = [base_model2] #skipped training finGPT for now.
+base_models = [base_model4] #skipped training finGPT for now.
 
 
 def tokenize_pre_train(tokenizer, example):
@@ -184,95 +183,9 @@ def get_pretrain_dataset():
 
 # ////////////////////// END //////////////////////
 
-import os
-
-# def pre_train():
-#     print("start pre-training")
-#     pretrain_dataset, RD_pretrain_dataset = get_pretrain_dataset()
-#
-#     for model in base_models:
-#
-#         model_name = model['name']
-#         tokenizer = AutoTokenizer.from_pretrained(model["tokenizer"])
-#         data_collator = DataCollatorForLanguageModeling(
-#             tokenizer=tokenizer,
-#             mlm=True,
-#             mlm_probability=0.15
-#         )
-#
-#         print("starts tokenizing second dataset")
-#         tokenized_rd_pretrain_dataset = RD_pretrain_dataset.map(lambda x: tokenize_pre_train(tokenizer, x),
-#                                                                 batched=True)
-#
-#         rd_pretrain_output_dir = f'./rd_preTrain_checkpoints/{model_name}'
-#
-#
-#
-#         rd_pre_training_args = TrainingArguments(
-#             output_dir=rd_pretrain_output_dir,
-#             overwrite_output_dir=True,
-#             num_train_epochs=3,
-#             per_device_train_batch_size=8,
-#             save_steps=10_000,
-#             save_total_limit=2,
-#             logging_dir='./logs',
-#             evaluation_strategy="no",  # Disable evaluation here too
-#             fp16=True  # Enable mixed precision training
-#         )
-#
-#         model_for_rd_pt = model["model_for_PT"]
-#
-#         # Check if a checkpoint exists for both datasets and continue from the latest one if it does
-#         rd_pretrain_last_checkpoint = None
-#
-#
-#         if os.path.exists(rd_pretrain_output_dir):
-#             rd_pretrain_last_checkpoint = max(
-#                 [os.path.join(rd_pretrain_output_dir, d) for d in os.listdir(rd_pretrain_output_dir) if d.startswith("checkpoint")],
-#                 default=None,
-#                 key=os.path.getmtime
-#             )
-#
-#
-#         rd_pretrain_trainer = Trainer(
-#             model=model_for_rd_pt,
-#             args=rd_pre_training_args,
-#             train_dataset=tokenized_rd_pretrain_dataset,
-#             tokenizer=tokenizer,
-#             data_collator=data_collator,
-#         )
-#
-#         # Start or resume training for the second dataset
-#         print(f"starts training model {model_name} with rd_pre-train dataset")
-#         if rd_pretrain_last_checkpoint is not None:
-#             print(f"Resuming training from checkpoint {rd_pretrain_last_checkpoint} for model {model_name}")
-#             rd_pretrain_trainer.train(resume_from_checkpoint=rd_pretrain_last_checkpoint)
-#         else:
-#             rd_pretrain_trainer.train()
-#
-#         # Save the final model after pre-training on the second dataset
-#         rd_pretrain_save_directory = f'./Saved_models/pre_trained/Pre-Trained+RD_{model_name}'
-#         os.makedirs(rd_pretrain_save_directory, exist_ok=True)
-#         model_for_rd_pt.save_pretrained(rd_pretrain_save_directory)
-#         tokenizer.save_pretrained(rd_pretrain_save_directory)
-#         print(f"model {model_name} has been saved to {rd_pretrain_save_directory}")
-#
-#         print(f"{model_name} has completed pre-training")
-
-def is_valid_checkpoint(checkpoint_dir):
-    """Check if the checkpoint contains a valid trainer_state.json file."""
-    trainer_state_path = os.path.join(checkpoint_dir, 'trainer_state.json')
-    if not os.path.exists(trainer_state_path):
-        return False
-    try:
-        with open(trainer_state_path, 'r') as f:
-            json.load(f)  # Try to load the JSON file
-        return True
-    except (json.JSONDecodeError, IOError):
-        return False
 
 def pre_train():
-    print("start pre-training at test.py")
+    print("start pre-training at pt_finbert_rd_electra_full.py")
     pretrain_dataset, RD_pretrain_dataset = get_pretrain_dataset()
 
     for model in base_models:
@@ -285,10 +198,11 @@ def pre_train():
             mlm_probability=0.15
         )
 
-        # print("starts tokenizing first dataset")
-        # tokenized_pretrain_dataset = pretrain_dataset.map(lambda x: tokenize_pre_train(tokenizer, x), batched=True)
+        print("starts tokenizing first dataset")
+        tokenized_pretrain_dataset = pretrain_dataset.map(lambda x: tokenize_pre_train(tokenizer, x), batched=True)
         print("starts tokenizing second dataset")
-        tokenized_rd_pretrain_dataset = RD_pretrain_dataset.map(lambda x: tokenize_pre_train(tokenizer, x), batched=True)
+        tokenized_rd_pretrain_dataset = RD_pretrain_dataset.map(lambda x: tokenize_pre_train(tokenizer, x),
+                                                                batched=True)
 
         pretrain_output_dir = f'./preTrain_checkpoints/{model_name}'
         rd_pretrain_output_dir = f'./rd_preTrain_checkpoints/{model_name}'
@@ -321,7 +235,9 @@ def pre_train():
         model_for_rd_pt = model["model_for_PT"]
 
         # Check if a checkpoint exists for both datasets and continue from the latest one if it does
-
+        # pretrain_last_checkpoint = None
+        # rd_pretrain_last_checkpoint = None
+        #
         # if os.path.exists(pretrain_output_dir):
         #     pretrain_last_checkpoint = max(
         #         [os.path.join(pretrain_output_dir, d) for d in os.listdir(pretrain_output_dir) if d.startswith("checkpoint")],
@@ -336,13 +252,13 @@ def pre_train():
         #         key=os.path.getmtime
         #     )
 
-        # pretrain_trainer = Trainer(
-        #     model=model_for_pt,
-        #     args=pre_training_args,
-        #     train_dataset=tokenized_pretrain_dataset,
-        #     tokenizer=tokenizer,
-        #     data_collator=data_collator,
-        # )
+        pretrain_trainer = Trainer(
+            model=model_for_pt,
+            args=pre_training_args,
+            train_dataset=tokenized_pretrain_dataset,
+            tokenizer=tokenizer,
+            data_collator=data_collator,
+        )
 
         rd_pretrain_trainer = Trainer(
             model=model_for_rd_pt,
@@ -354,22 +270,23 @@ def pre_train():
 
         # # Start or resume training for the first dataset
         # print(f"starts training model {model_name} with pre-train dataset")
-        # if pretrain_last_checkpoint is not None and is_valid_checkpoint(pretrain_last_checkpoint):
+        # if pretrain_last_checkpoint is not None:
         #     print(f"Resuming training from checkpoint {pretrain_last_checkpoint} for model {model_name}")
         #     pretrain_trainer.train(resume_from_checkpoint=pretrain_last_checkpoint)
         # else:
-        # pretrain_trainer.train()
+        if(model_name != 'Finbert'):
+            pretrain_trainer.train()
 
-        # Save the final model after pre-training on the first dataset
-        # pretrain_save_directory = f'./Saved_models/pre_trained/Pre-Trained_{model_name}'
-        # os.makedirs(pretrain_save_directory, exist_ok=True)
-        # model_for_pt.save_pretrained(pretrain_save_directory)
-        # tokenizer.save_pretrained(pretrain_save_directory)
-        # print(f"model {model_name} has been saved to {pretrain_save_directory}")
+            # Save the final model after pre-training on the first dataset
+            pretrain_save_directory = f'./Saved_models/pre_trained/Pre-Trained_{model_name}'
+            os.makedirs(pretrain_save_directory, exist_ok=True)
+            model_for_pt.save_pretrained(pretrain_save_directory)
+            tokenizer.save_pretrained(pretrain_save_directory)
+            print(f"model {model_name} has been saved to {pretrain_save_directory}")
 
-        # Start or resume training for the second dataset
+        # # Start or resume training for the second dataset
         # print(f"starts training model {model_name} with rd_pre-train dataset")
-        # if rd_pretrain_last_checkpoint is not None and is_valid_checkpoint(rd_pretrain_last_checkpoint):
+        # if rd_pretrain_last_checkpoint is not None:
         #     print(f"Resuming training from checkpoint {rd_pretrain_last_checkpoint} for model {model_name}")
         #     rd_pretrain_trainer.train(resume_from_checkpoint=rd_pretrain_last_checkpoint)
         # else:
