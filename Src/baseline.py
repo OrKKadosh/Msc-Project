@@ -99,6 +99,7 @@ FPB = load_dataset("financial_phrasebank", 'sentences_75agree')['train']
 train_FPB, test_FPB = FPB.train_test_split(test_size=0.3, seed=SEED).values()
 
 
+
 evaluation_args = TrainingArguments(
     output_dir = "./results/checkpoints",
     per_device_eval_batch_size=8,

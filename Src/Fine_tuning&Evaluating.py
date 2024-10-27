@@ -9,7 +9,7 @@ from datasets import load_dataset, concatenate_datasets, Dataset
 from transformers import AutoModelForSequenceClassification, AutoTokenizer, AutoModelForMaskedLM, \
     DataCollatorWithPadding, Trainer, TrainingArguments
 import evaluate
-
+# TODO: to change this class according to the ft_0, just copy & paste
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
 
@@ -72,24 +72,54 @@ NUM_DATASETS = 5
 NUM_TRAIN_EPOCH = 3
 eval_dataset = load_dataset('TO_INSERT_TEST_DATASET')
 
-def compute_metrics(eval_pred):
-    accuracy_metric = evaluate.load("accuracy")
-    precision_metric = evaluate.load("precision")
-    recall_metric = evaluate.load("recall")
-    f1_metric = evaluate.load("f1")
+# def compute_metrics(eval_pred):
+#     accuracy_metric = evaluate.load("accuracy")
+#     precision_metric = evaluate.load("precision")
+#     recall_metric = evaluate.load("recall")
+#     f1_metric = evaluate.load("f1")
+#
+#     logits, labels = eval_pred
+#     predictions = np.argmax(logits, axis=-1)
+#     accuracy = accuracy_metric.compute(predictions=predictions, references=labels)
+#     precision = precision_metric.compute(predictions=predictions, references=labels, average='macro')
+#     recall = recall_metric.compute(predictions=predictions, references=labels, average='macro')
+#     f1 = f1_metric.compute(predictions=predictions, references=labels, average='macro')
+#     return {
+#         'accuracy': accuracy['accuracy'],
+#         'precision': precision['precision'],
+#         'recall': recall['recall'],
+#         'f1': f1['f1']
+#     }
 
-    logits, labels = eval_pred
-    predictions = np.argmax(logits, axis=-1)
-    accuracy = accuracy_metric.compute(predictions=predictions, references=labels)
-    precision = precision_metric.compute(predictions=predictions, references=labels, average='macro')
-    recall = recall_metric.compute(predictions=predictions, references=labels, average='macro')
-    f1 = f1_metric.compute(predictions=predictions, references=labels, average='macro')
-    return {
-        'accuracy': accuracy['accuracy'],
-        'precision': precision['precision'],
-        'recall': recall['recall'],
-        'f1': f1['f1']
-    }
+accuracy_metric = evaluate.load("./local_metrics/accuracy")
+precision_metric = evaluate.load("./local_metrics/precision")
+recall_metric = evaluate.load("./local_metrics/recall")
+f1_metric = evaluate.load("./local_metrics/f1")
+
+def compute_metrics(eval_pred, model_name):
+  logits, labels = eval_pred
+  predictions = np.argmax(logits, axis=-1)
+
+  # needed while using the FINBERT & base_stock-news-distilbert, since its labels are not matching
+  if 'Finbert' in model_name:
+      id2label = {0: 2, 1: 0, 2: 1}
+      mapped_predictions = [id2label[pred] for pred in predictions]
+  else: mapped_predictions = predictions
+
+
+  # Compute accuracy, precision, recall, and f1 using either mapped or original predictions
+  accuracy = accuracy_metric.compute(predictions=mapped_predictions, references=labels)
+  precision = precision_metric.compute(predictions=mapped_predictions, references=labels, average='macro')
+  recall = recall_metric.compute(predictions=mapped_predictions, references=labels, average='macro')
+  f1 = f1_metric.compute(predictions=mapped_predictions, references=labels, average='macro')
+
+  return {
+      'accuracy': accuracy['accuracy'],
+      'precision': precision['precision'],
+      'recall': recall['recall'],
+      'f1': f1['f1']
+  }
+
 
 def tokenize_function(tokenizer, examples):
     output = tokenizer(examples['text'], padding='max_length', truncation=True, max_length=512)
@@ -141,8 +171,8 @@ def encode_labels(example, ds, model_name=None):
             example['label'] = label_dict['neutral']
         else:
             example['label'] = label_dict['positive']
-    elif ds == 1 :
-        example['label'] = label_dict[example['label']]
+    # elif ds == 1 :
+    #     example['label'] = label_dict[example['label']]
     elif ds == 2 or ds == 6:  # Stock-Market Sentiment Dataset
         # Use stock market sentiment dataset labels (already numbers)
         label_dict1 = {1: label_dict['positive'], -1: label_dict['negative']}
@@ -150,7 +180,7 @@ def encode_labels(example, ds, model_name=None):
     # elif ds == 3 : This dataset is already mapped to support 0-negative, 1-neutral, 2-positive
     #     example['label'] = label_dict[example['label']]
     elif ds == 4:
-        example['label'] = label_dict[example['output']]  # Map output to label
+        example['label'] = label_dict[example['label']]  # Map output to label
     return example
 
 
@@ -183,6 +213,7 @@ def get_dataset(idx):
         dataset = Dataset.from_pandas(df)
     elif idx == 4:  # FinGPT/fingpt-sentiment-train
         df = pd.read_csv("/cs_storage/orkados/Data/FinGPT_cleaned_dataset.csv")
+        df.rename(columns={'input': 'text', 'output': 'label'}, inplace=True)
         dataset = Dataset.from_pandas(df)
 
     # BACK-TRANSLATED DATASETS
@@ -225,9 +256,11 @@ def fine_tuning_fixed():
     for model in base_models:
 
         model_name = model['name']
-        base_directory = f'./Saved_models/pre_trained/Pre-Trained_{model_name}'
+        # base_directory = f'./Saved_models/pre_trained/Pre-Trained_{model_name}'
         pt_directory = f'./Saved_models/pre_trained/Pre-Trained_{model_name}'
         rd_pt_directory = f'./Saved_models/pre_trained/Pre-Trained+RD_{model_name}'
+
+        base_tokenizer = AutoTokenizer.from_pretrained(model["tokenizer"])
 
         pt_model = AutoModelForSequenceClassification.from_pretrained(pt_directory)
         pt_tokenizer = AutoTokenizer.from_pretrained(pt_directory)
@@ -235,7 +268,7 @@ def fine_tuning_fixed():
         rd_pt_model = AutoModelForSequenceClassification.from_pretrained(rd_pt_directory)
         rd_pt_tokenizer = AutoTokenizer.from_pretrained(rd_pt_directory)
 
-        base_collator = DataCollatorWithPadding(tokenizer=model['tokenizer'], return_tensors='pt')
+        base_collator = DataCollatorWithPadding(tokenizer=base_tokenizer, return_tensors='pt')
         pt_data_collator = DataCollatorWithPadding(tokenizer=pt_tokenizer, return_tensors='pt')
         rd_pt_data_collator = DataCollatorWithPadding(tokenizer=rd_pt_tokenizer, return_tensors='pt')
 
@@ -243,15 +276,13 @@ def fine_tuning_fixed():
         base_model = {
             'name': model_name,
             'type': 'base',
-            'directory': base_directory,
             'model': model['model'],
-            'tokenizer': model['tokenizer'],
+            'tokenizer': base_tokenizer,
             'data_collator': base_collator
         }
         pre_train_model = {
             "name": model_name,
             "type": "pt",
-            "directory": pt_directory,
             "model": pt_model,
             "tokenizer": pt_tokenizer,
             "data_collator": pt_data_collator,
@@ -259,7 +290,6 @@ def fine_tuning_fixed():
         rd_pre_train_model = {
             "name": model_name,
             "type": "rd_pt",
-            "directory": rd_pt_directory,
             "model": rd_pt_model,
             "tokenizer": rd_pt_tokenizer,
             "data_collator": rd_pt_data_collator,
@@ -306,7 +336,7 @@ def fine_tuning_fixed():
                     train_dataset=tokenized_train_dataset,
                     tokenizer=inner_model['tokenizer'],
                     data_collator=inner_model["data_collator"],
-                    compute_metrics=compute_metrics
+                    compute_metrics=lambda eval_pred : compute_metrics(eval_pred, model_name),
                 )
                 print(f"Starting Fine-Tuning on dataset {idx} for model: {inner_model['name']} of type: {inner_model['type']}")
 
@@ -330,7 +360,7 @@ def fine_tuning_fixed():
                 eval_dataset=tokenized_eval_dataset,
                 tokenizer=inner_model['tokenizer'],
                 data_collator=inner_model['data_collator'],
-                compute_metrics=compute_metrics,
+                compute_metrics=lambda eval_pred : compute_metrics(eval_pred, model_name),
             )
 
             evaluation_results = trainer.evaluate()
