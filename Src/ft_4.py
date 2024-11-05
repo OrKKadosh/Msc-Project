@@ -11,15 +11,16 @@ from transformers import AutoModelForSequenceClassification, AutoTokenizer, Auto
 import evaluate
 
 print("running ft_4.py")
+
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
 
-#     "0": "negative","1": "neutral","2": "positive"
-# base_model0 = {"tokenizer": "FacebookAI/roberta-base",
-#           "model": AutoModelForSequenceClassification.from_pretrained('mrm8488/distilroberta-finetuned-financial-news-sentiment-analysis', num_labels=3).to(device),
-#           "model_for_PT": AutoModelForMaskedLM.from_pretrained('mrm8488/distilroberta-finetuned-financial-news-sentiment-analysis').to(device),
-#           "name": "distilroberta-finetuned-financial-news-sentiment-analysis"}#distilroberta-FT-financial-news-sentiment-analysis
-#
+    # "0": "negative","1": "neutral","2": "positive"
+base_model0 = {"tokenizer": "FacebookAI/roberta-base",
+          "model": AutoModelForSequenceClassification.from_pretrained('mrm8488/distilroberta-finetuned-financial-news-sentiment-analysis', num_labels=3).to(device),
+          "model_for_PT": AutoModelForMaskedLM.from_pretrained('mrm8488/distilroberta-finetuned-financial-news-sentiment-analysis').to(device),
+          "name": "distilroberta-finetuned-financial-news-sentiment-analysis"}#distilroberta-FT-financial-news-sentiment-analysis
+
 # #     "0": "negative","1": "neutral","2": "positive"
 # base_model1 = {"tokenizer": "KernAI/stock-news-distilbert",
 #           "model": AutoModelForSequenceClassification.from_pretrained('KernAI/stock-news-distilbert', num_labels=3).to(device),
@@ -62,13 +63,13 @@ print(f"Using device: {device}")
 #     "name": "FinGPT"
 # } #FinGPT
 
-base_model4 = {
-    "tokenizer": "SALT-NLP/FLANG-ELECTRA",
-    "model": AutoModelForSequenceClassification.from_pretrained("SALT-NLP/FLANG-ELECTRA", num_labels=3).to(device),
-    "model_for_PT": AutoModelForMaskedLM.from_pretrained("SALT-NLP/FLANG-ELECTRA").to(device),
-    "name": "FLANG-ELECTRA"
-}#FLANG-ELECTRA
-base_models = [base_model4]
+# base_model4 = {
+#     "tokenizer": "SALT-NLP/FLANG-ELECTRA",
+#     "model": AutoModelForSequenceClassification.from_pretrained("SALT-NLP/FLANG-ELECTRA", num_labels=3).to(device),
+#     "model_for_PT": AutoModelForMaskedLM.from_pretrained("SALT-NLP/FLANG-ELECTRA").to(device),
+#     "name": "FLANG-ELECTRA"
+# }#FLANG-ELECTRA
+base_models = [base_model0]
 NUM_DATASETS = 5
 NUM_TRAIN_EPOCH = 3
 # eval_dataset = load_dataset('TO_INSERT_TEST_DATASET')
@@ -287,14 +288,14 @@ def fine_tuning_fixed():
         rd_pt_data_collator = DataCollatorWithPadding(tokenizer=rd_pt_tokenizer, return_tensors='pt')
 
         # Create model dictionaries for base, pre-trained, and RD pre-trained models
-        base_model = {
-            'name': model_name,
-            'type': 'base',
-            # 'directory': base_directory,
-            'model': model['model'],
-            'tokenizer': base_tokenizer,
-            'data_collator': base_collator
-        }
+        # base_model = {
+        #     'name': model_name,
+        #     'type': 'base',
+        #     # 'directory': base_directory,
+        #     'model': model['model'],
+        #     'tokenizer': base_tokenizer,
+        #     'data_collator': base_collator
+        # }
         pre_train_model = {
             "name": model_name,
             "type": "pt",
@@ -311,13 +312,15 @@ def fine_tuning_fixed():
             "tokenizer": rd_pt_tokenizer,
             "data_collator": rd_pt_data_collator,
         }
-        base_and_pt_models = [base_model, pre_train_model, rd_pre_train_model]
+        # base_and_pt_models = [base_model, pre_train_model, rd_pre_train_model]
+        base_and_pt_models = [pre_train_model, rd_pre_train_model]
+
 
         # Set up training arguments
         training_args = TrainingArguments(
             output_dir="./train_checkpoints",
             learning_rate=2e-5,
-            per_device_train_batch_size=8,
+            per_device_train_batch_size=4,
             num_train_epochs=NUM_TRAIN_EPOCH,
             weight_decay=0.01,
             save_strategy="epoch",

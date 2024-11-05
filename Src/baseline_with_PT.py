@@ -3,9 +3,10 @@ import os
 import torch
 
 from transformers import TrainingArguments, AutoTokenizer, AutoModelForSequenceClassification, DataCollatorWithPadding, Trainer
-from datasets import load_metric, load_dataset, concatenate_datasets
+from datasets import load_dataset, concatenate_datasets
 import numpy as np
 import json
+import evaluate
 
 SEED = 1694
 np.random.seed(SEED)
@@ -20,10 +21,10 @@ torch.manual_seed(SEED)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Baseline is Using device: {device}")
 # Load the metrics
-accuracy_metric = load_metric("accuracy")
-precision_metric = load_metric("precision")
-recall_metric = load_metric("recall")
-f1_metric = load_metric("f1")
+accuracy_metric = evaluate.load("accuracy")
+precision_metric = evaluate.load("precision")
+recall_metric = evaluate.load("recall")
+f1_metric = evaluate.load("f1")
 
 # get the initialized tokenizer
 # def get_tokenizer(name):
@@ -91,7 +92,6 @@ models = [model0, model1, model2]
 
 FPB = load_dataset("financial_phrasebank", 'sentences_75agree')['train']
 train_FPB, test_FPB = FPB.train_test_split(test_size=0.3, seed=SEED).values()
-
 
 
 NUM_TRAIN_EPOCH = 3

@@ -1,11 +1,18 @@
 import os
+
+import pandas as pd
 import torch
 from transformers import TrainingArguments, AutoTokenizer, AutoModelForSequenceClassification, DataCollatorWithPadding, Trainer
-from datasets import load_metric, load_dataset, concatenate_datasets
+from datasets import load_dataset, concatenate_datasets, Dataset
 import numpy as np
 import json
 from datetime import datetime  # Import datetime module
+import evaluate
 
+accuracy_metric = evaluate.load("./local_metrics/accuracy")
+precision_metric = evaluate.load("./local_metrics/precision")
+recall_metric = evaluate.load("./local_metrics/recall")
+f1_metric = evaluate.load("./local_metrics/f1")
 
 SEED = 1694
 np.random.seed(SEED)
@@ -22,11 +29,10 @@ now = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Baseline is Using device: {device}")
 
-# Load the metrics
-accuracy_metric = load_metric("accuracy")
-precision_metric = load_metric("precision")
-recall_metric = load_metric("recall")
-f1_metric = load_metric("f1")
+def convert_labels_to_int(example):
+    # Convert the labels to integers
+    example['label'] = int(example['label'])
+    return example
 
 # get the initialized tokenizer
 def get_tokenizer(name):
@@ -34,7 +40,7 @@ def get_tokenizer(name):
 
 # Tokenize the datasets for each dataset
 def tokenize_function(tokenizer, examples):
-      return tokenizer(examples['sentence'], padding='max_length', truncation=True, max_length=256)
+      return tokenizer(examples['text'], padding='max_length', truncation=True, max_length=256)
 
 
 def compute_metrics(eval_pred, model_name):
@@ -106,9 +112,10 @@ evaluation_args = TrainingArguments(
     logging_dir='./logs',
     do_eval = True
 )
-
+eval_consent_75_df = pd.read_csv('Data/test_datasets/split_eval_test/consent_75_eval.csv').apply(convert_labels_to_int, axis=1)
+eval_consent_75 = Dataset.from_pandas(eval_consent_75_df)
 LORA_FLAG = 0
-test_dataset = test_FPB
+test_dataset = eval_consent_75
 
 for model in base_models:
     model_name = model["name"]
@@ -129,65 +136,65 @@ for model in base_models:
         data_collator=data_collator,
         compute_metrics=lambda eval_pred : compute_metrics(eval_pred, model_name),
     )
-
-    # Get predictions
-    predictions = trainer.predict(tokenized_test_dataset)
-
-    # Labels: 0 is negative, 1 is neutral, 2 is positive.
-
-    # Extract logits and labels
-    logits = predictions.predictions
-    true_labels = predictions.label_ids
-
-    # Get predicted labels
-    predicted_labels = np.argmax(logits, axis=-1)
-
-    # Collect results for each sample
-    detailed_results = []
-    count_predicted_label = {0: 0, 1: 0, 2: 0}
-    count_real_label = {0: 0, 1: 0, 2: 0}
-
-    count_mistakes = {"true 0 to predicted 1": 0, "true 0 to predicted 2":0, "true 1 to predicted 0":0, "true 1 to predicted 2": 0, "true 2 to predicted 0":0, "true 2 to predicted 1": 0}
-
-
-    # Counts the labels of the test_set samples and the predicted labels
-    for idx, sample in enumerate(test_dataset):
-        sentence = sample['sentence']
-
-        true_label = int(true_labels[idx])
-        if id2label: predicted_label = int(id2label[predicted_labels[idx]])
-        else: predicted_label = int(predicted_labels[idx])
-
-        if true_label != predicted_label:
-            if true_label == 0 and predicted_label == 1: count_mistakes["true 0 to predicted 1"] += 1
-            elif true_label == 0 and predicted_label == 2: count_mistakes["true 0 to predicted 2"] += 1
-            elif true_label == 1 and predicted_label == 0: count_mistakes["true 1 to predicted 0"] += 1
-            elif true_label == 1 and predicted_label == 2: count_mistakes["true 1 to predicted 2"] += 1
-            elif true_label == 2 and predicted_label == 0: count_mistakes["true 2 to predicted 0"] += 1
-            elif true_label == 2 and predicted_label == 1: count_mistakes["true 2 to predicted 1"] += 1
-
-        count_real_label[true_label] += 1
-        count_predicted_label[predicted_label] += 1
-
-        # Append the result for this sample to detailed_results
-        detailed_results.append({
-            "sample": sentence,
-            "true_label": int(true_label),  # Use id2label to get the correct label
-            "predicted_label": int(predicted_label)  # Use id2label for predicted label
-        })
+    #
+    # # Get predictions
+    # predictions = trainer.predict(tokenized_test_dataset)
+    #
+    # # Labels: 0 is negative, 1 is neutral, 2 is positive.
+    #
+    # # Extract logits and labels
+    # logits = predictions.predictions
+    # true_labels = predictions.label_ids
+    #
+    # # Get predicted labels
+    # predicted_labels = np.argmax(logits, axis=-1)
+    #
+    # # Collect results for each sample
+    # detailed_results = []
+    # count_predicted_label = {0: 0, 1: 0, 2: 0}
+    # count_real_label = {0: 0, 1: 0, 2: 0}
+    #
+    # count_mistakes = {"true 0 to predicted 1": 0, "true 0 to predicted 2":0, "true 1 to predicted 0":0, "true 1 to predicted 2": 0, "true 2 to predicted 0":0, "true 2 to predicted 1": 0}
+    #
+    #
+    # # Counts the labels of the test_set samples and the predicted labels
+    # for idx, sample in enumerate(test_dataset):
+    #     sentence = sample['sentence']
+    #
+    #     true_label = int(true_labels[idx])
+    #     if id2label: predicted_label = int(id2label[predicted_labels[idx]])
+    #     else: predicted_label = int(predicted_labels[idx])
+    #
+    #     if true_label != predicted_label:
+    #         if true_label == 0 and predicted_label == 1: count_mistakes["true 0 to predicted 1"] += 1
+    #         elif true_label == 0 and predicted_label == 2: count_mistakes["true 0 to predicted 2"] += 1
+    #         elif true_label == 1 and predicted_label == 0: count_mistakes["true 1 to predicted 0"] += 1
+    #         elif true_label == 1 and predicted_label == 2: count_mistakes["true 1 to predicted 2"] += 1
+    #         elif true_label == 2 and predicted_label == 0: count_mistakes["true 2 to predicted 0"] += 1
+    #         elif true_label == 2 and predicted_label == 1: count_mistakes["true 2 to predicted 1"] += 1
+    #
+    #     count_real_label[true_label] += 1
+    #     count_predicted_label[predicted_label] += 1
+    #
+    #     # Append the result for this sample to detailed_results
+    #     detailed_results.append({
+    #         "sample": sentence,
+    #         "true_label": int(true_label),  # Use id2label to get the correct label
+    #         "predicted_label": int(predicted_label)  # Use id2label for predicted label
+    #     })
 
     # Collect all evaluation results including the detailed sample predictions
     results_with_model = {
         "model_name": model_name,
         "overall_results": trainer.evaluate(),  # Overall evaluation metrics
-        "count_real_label" : count_real_label,
-        "count_predicted_label" : count_predicted_label,
-        "count_mistakes" : count_mistakes,
-        "detailed_results": detailed_results  # Add detailed sample-level results
+        # "count_real_label" : count_real_label,
+        # "count_predicted_label" : count_predicted_label,
+        # "count_mistakes" : count_mistakes,
+        # "detailed_results": detailed_results  # Add detailed sample-level results
     }
 
     # Create results directory and save to file
-    results_dir = "./Evaluation_results/Baselines"
+    results_dir = f"./Evaluation_results/Baselines_{now}"
     os.makedirs(results_dir, exist_ok=True)
     results_file_path = os.path.join(results_dir, model_name + ".json")
 

@@ -6,30 +6,36 @@ import numpy as np
 import pandas as pd
 import torch
 from datasets import load_dataset, concatenate_datasets, Dataset
+from peft import LoraConfig
 from transformers import AutoModelForSequenceClassification, AutoTokenizer, AutoModelForMaskedLM, \
     DataCollatorWithPadding, Trainer, TrainingArguments
 import evaluate
+from peft import LoraConfig, TaskType, get_peft_model
+
 # TODO: to change this class according to the ft_0, just copy & paste
+
+print("Starts running Fine_tuning&Evaluating")
+
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
 
 #     "0": "negative","1": "neutral","2": "positive"
-base_model0 = {"tokenizer": "FacebookAI/roberta-base",
-          "model": AutoModelForSequenceClassification.from_pretrained('mrm8488/distilroberta-finetuned-financial-news-sentiment-analysis', num_labels=3).to(device),
-          "model_for_PT": AutoModelForMaskedLM.from_pretrained('mrm8488/distilroberta-finetuned-financial-news-sentiment-analysis').to(device),
-          "name": "distilroberta-finetuned-financial-news-sentiment-analysis"}#distilroberta-FT-financial-news-sentiment-analysis
-
-#     "0": "negative","1": "neutral","2": "positive"
-base_model1 = {"tokenizer": "KernAI/stock-news-distilbert",
-          "model": AutoModelForSequenceClassification.from_pretrained('KernAI/stock-news-distilbert', num_labels=3).to(device),
-          "model_for_PT": AutoModelForMaskedLM.from_pretrained('KernAI/stock-news-distilbert'),
-          "name": "stock-news-distilbert"}#stock-news-distilbert
-
-# "0": "positive", "1": "negative", "2": "neutral"
-base_model2 = {"tokenizer": "bert-base-uncased",
-          "model": AutoModelForSequenceClassification.from_pretrained('ProsusAI/finbert', num_labels=3).to(device),
-          "model_for_PT": AutoModelForMaskedLM.from_pretrained('ProsusAI/finbert').to(device),
-          "name": "Finbert"}#FinBert
+# base_model0 = {"tokenizer": "FacebookAI/roberta-base",
+#           "model": AutoModelForSequenceClassification.from_pretrained('mrm8488/distilroberta-finetuned-financial-news-sentiment-analysis', num_labels=3).to(device),
+#           "model_for_PT": AutoModelForMaskedLM.from_pretrained('mrm8488/distilroberta-finetuned-financial-news-sentiment-analysis').to(device),
+#           "name": "distilroberta-finetuned-financial-news-sentiment-analysis"}#distilroberta-FT-financial-news-sentiment-analysis
+#
+# #     "0": "negative","1": "neutral","2": "positive"
+# base_model1 = {"tokenizer": "KernAI/stock-news-distilbert",
+#           "model": AutoModelForSequenceClassification.from_pretrained('KernAI/stock-news-distilbert', num_labels=3).to(device),
+#           "model_for_PT": AutoModelForMaskedLM.from_pretrained('KernAI/stock-news-distilbert'),
+#           "name": "stock-news-distilbert"}#stock-news-distilbert
+#
+# # "0": "positive", "1": "negative", "2": "neutral"
+# base_model2 = {"tokenizer": "bert-base-uncased",
+#           "model": AutoModelForSequenceClassification.from_pretrained('ProsusAI/finbert', num_labels=3).to(device),
+#           "model_for_PT": AutoModelForMaskedLM.from_pretrained('ProsusAI/finbert').to(device),
+#           "name": "Finbert"}#FinBert
 # base_model3 = {
 #     "tokenizer": "NousResearch/Llama-2-13b-hf",
 #     "model": PeftModel.from_pretrained(
@@ -67,29 +73,25 @@ base_model4 = {
     "model_for_PT": AutoModelForMaskedLM.from_pretrained("SALT-NLP/FLANG-ELECTRA").to(device),
     "name": "FLANG-ELECTRA"
 }#FLANG-ELECTRA
-base_models = [base_model0, base_model1, base_model2, base_model4]
+base_models = [base_model4]
 NUM_DATASETS = 5
 NUM_TRAIN_EPOCH = 3
-eval_dataset = load_dataset('TO_INSERT_TEST_DATASET')
 
-# def compute_metrics(eval_pred):
-#     accuracy_metric = evaluate.load("accuracy")
-#     precision_metric = evaluate.load("precision")
-#     recall_metric = evaluate.load("recall")
-#     f1_metric = evaluate.load("f1")
-#
-#     logits, labels = eval_pred
-#     predictions = np.argmax(logits, axis=-1)
-#     accuracy = accuracy_metric.compute(predictions=predictions, references=labels)
-#     precision = precision_metric.compute(predictions=predictions, references=labels, average='macro')
-#     recall = recall_metric.compute(predictions=predictions, references=labels, average='macro')
-#     f1 = f1_metric.compute(predictions=predictions, references=labels, average='macro')
-#     return {
-#         'accuracy': accuracy['accuracy'],
-#         'precision': precision['precision'],
-#         'recall': recall['recall'],
-#         'f1': f1['f1']
-#     }
+def convert_labels_to_int(example):
+    # Convert the labels to integers
+    example['label'] = int(example['label'])
+    return example
+
+
+eval_consent_75_df = pd.read_csv('Data/test_datasets/split_eval_test/consent_75_eval.csv').apply(convert_labels_to_int, axis=1)
+eval_dataset = Dataset.from_pandas(eval_consent_75_df)
+
+# eval_all_agree_df = pd.read_csv('Data/test_datasets/split_eval_test/all_agree_eval.csv').apply(convert_labels_to_int, axis=1)
+# eval_all_agree = Dataset.from_pandas(eval_all_agree_df)
+# #
+# eval_datasets = [eval_consent_75, eval_all_agree]
+
+
 
 accuracy_metric = evaluate.load("./local_metrics/accuracy")
 precision_metric = evaluate.load("./local_metrics/precision")
@@ -171,8 +173,8 @@ def encode_labels(example, ds, model_name=None):
             example['label'] = label_dict['neutral']
         else:
             example['label'] = label_dict['positive']
-    # elif ds == 1 :
-    #     example['label'] = label_dict[example['label']]
+    elif ds == 1 :
+        example['label'] = label_dict[example['label']]
     elif ds == 2 or ds == 6:  # Stock-Market Sentiment Dataset
         # Use stock market sentiment dataset labels (already numbers)
         label_dict1 = {1: label_dict['positive'], -1: label_dict['negative']}
@@ -194,15 +196,16 @@ def get_dataset(idx):
         return example
 
     if idx == 0:  # fiqa-sentiment-classification
-        train_dataset = load_dataset("ChanceFocus/fiqa-sentiment-classification", split='train').rename_column('sentence', 'text')
-        valid_dataset = load_dataset("ChanceFocus/fiqa-sentiment-classification", split='valid').rename_column('sentence', 'text')
-        test_dataset = load_dataset("ChanceFocus/fiqa-sentiment-classification", split='test').rename_column('sentence', 'text')
-        concatenate_dataset = concatenate_datasets([train_dataset, valid_dataset, test_dataset])
-        dataset = concatenate_dataset.filter(lambda example: example['type'] == 'headline')
+        df = pd.read_csv('Data/fiqa.csv')
+        dataset = Dataset.from_pandas(df)
+        dataset = dataset.rename_column('sentence', 'text')
+        dataset = dataset.filter(lambda example: example['type'] == 'headline')
         dataset = clean_dataset(dataset, idx)
     elif idx == 1:  # financial_phrasebank_75_agree
-        FPB = load_dataset("financial_phrasebank", 'sentences_75agree')['train']
-        dataset = FPB.rename_column('sentence', 'text')
+        df = pd.read_csv('Data/Sentences75Agree.csv')
+        dataset = Dataset.from_pandas(df)
+        # FPB = load_dataset("financial_phrasebank", 'sentences_75agree')['train']
+        # dataset = FPB.rename_column('sentence', 'text')
     elif idx == 2:  # Stock-Market Sentiment Dataset
         df = pd.read_csv('Data/Stock-Market Sentiment Dataset.csv')
         df.rename(columns={'Text': 'text', 'Sentiment': 'label'}, inplace=True)
@@ -256,7 +259,6 @@ def fine_tuning_fixed():
     for model in base_models:
 
         model_name = model['name']
-        # base_directory = f'./Saved_models/pre_trained/Pre-Trained_{model_name}'
         pt_directory = f'./Saved_models/pre_trained/Pre-Trained_{model_name}'
         rd_pt_directory = f'./Saved_models/pre_trained/Pre-Trained+RD_{model_name}'
 
@@ -298,7 +300,7 @@ def fine_tuning_fixed():
 
         # Set up training arguments
         training_args = TrainingArguments(
-            output_dir="./train_checkpoints",
+            output_dir=f"./train_checkpoints/{model_name}/{model_type}",
             learning_rate=2e-5,
             per_device_train_batch_size=8,
             num_train_epochs=NUM_TRAIN_EPOCH,
@@ -309,7 +311,7 @@ def fine_tuning_fixed():
         # Set up evaluation arguments
         evaluation_args = TrainingArguments(
             output_dir="./eval_checkpoints",
-            per_device_eval_batch_size=8,
+            per_device_eval_batch_size=2,
             logging_dir='./logs',
             do_eval=True,
             save_strategy="epoch",
@@ -318,8 +320,13 @@ def fine_tuning_fixed():
         for inner_model in base_and_pt_models:  # Iterate over models (base, pre-trained, RD pre-trained)
 
             print(f"Starting fine-tuning for model: {inner_model['name']} of type: {inner_model['type']}")
-            encoded_eval_dataset = eval_dataset.map(lambda x: encode_labels(x, idx, model_name=inner_model['name']))
-            tokenized_eval_dataset = encoded_eval_dataset.map(lambda x: tokenize_function(inner_model["tokenizer"], x),batched=True)  # Tokenize eval
+            tokenized_eval_dataset = eval_dataset.map(lambda x: tokenize_function(inner_model["tokenizer"], x),batched=True)  # Tokenize eval
+
+            # __________Using Lora for Electra model__________
+            lora_config = LoraConfig(task_type=TaskType.SEQ_CLS, r=8, lora_alpha=16,
+                                     lora_dropout=0.05)
+            chosen_model = get_peft_model(inner_model["model"], lora_config)  # applying LORA
+            # ________________________________________________
 
             for idx in range(NUM_DATASETS):  # Go through all datasets
 
@@ -331,7 +338,7 @@ def fine_tuning_fixed():
 
                 # Initialize the Trainer
                 trainer = Trainer(
-                    model=inner_model['model'],
+                    model=chosen_model,
                     args=training_args,
                     train_dataset=tokenized_train_dataset,
                     tokenizer=inner_model['tokenizer'],
@@ -346,9 +353,13 @@ def fine_tuning_fixed():
             print(f"Fine-Tuning completed for model: {inner_model['name']} of type: {inner_model['type']}")
 
             model_type = inner_model['type']
-            save_directory = f'./Saved_models/fine-tuned/{model_name}_{model_type}'
+            os.makedirs(f"./Saved_models/ft&eval/{model_name}/{model_type}", exist_ok=True)
+            save_directory = f'./Saved_models/ft&eval/{model_name}/{model_type}'
             trainer.save_model(save_directory)
+
             print(f"Model saved to {save_directory} after training on all datasets.")
+
+            print(f"Starts evaluating {model_name} of type: {model_type}")
 
             # Load the trained model for evaluation
             ft_model = AutoModelForSequenceClassification.from_pretrained(save_directory)
@@ -368,14 +379,25 @@ def fine_tuning_fixed():
             results_with_model = {
                 "Type": inner_model['type'],
                 "model_name": inner_model['name'],
-                "results": evaluation_results
+                "results": evaluation_results,
+                "eval_dataset": '75_consent',
+                "evaluation_args": {
+                    "output_dir": "./eval_checkpoints",
+                    "per_device_eval_batch_size": 2,
+                    "logging_dir": './logs',
+                    "do_eval": True,
+                    "save_strategy": "epoch"
+                }
             }
 
-            results_file_name = f'{model_name}_{model_type}.txt'
-            results_dir = "./Evaluation_results/FT/"
+            results_file_name = '75_consent.txt'
+            results_dir = f"./Evaluation_results/ft&eval_electra/{model_name}/{model_type}/"
+            os.makedirs(results_dir, exist_ok=True)
             results_file_path = os.path.join(results_dir, results_file_name)
 
             with open(results_file_path, "w") as file:
                 file.write(json.dumps(results_with_model, indent=4))
 
-            print(f"Evaluation results for the model: {model_name} saved to {results_file_name}")
+            print(f"Evaluation results for the model: {model_name} of type: {model_type} saved to {results_dir}")
+
+fine_tuning_fixed()

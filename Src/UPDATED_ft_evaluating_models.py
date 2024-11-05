@@ -2,6 +2,7 @@ from sklearn.metrics import precision_score, recall_score, f1_score, accuracy_sc
 import json
 import os
 import re
+from datetime import datetime
 
 import numpy as np
 import pandas as pd
@@ -11,20 +12,23 @@ from transformers import AutoModelForSequenceClassification, AutoTokenizer, Auto
     DataCollatorWithPadding, Trainer, TrainingArguments
 import evaluate
 
+now = datetime.now()
+now = now.strftime("%Y-%m-%d %H:%M:%S")
+
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
 
 #     "0": "negative","1": "neutral","2": "positive"
-# base_model0 = {"tokenizer": "FacebookAI/roberta-base",
-#           "model": AutoModelForSequenceClassification.from_pretrained('mrm8488/distilroberta-finetuned-financial-news-sentiment-analysis', num_labels=3).to(device),
-#           "model_for_PT": AutoModelForMaskedLM.from_pretrained('mrm8488/distilroberta-finetuned-financial-news-sentiment-analysis').to(device),
-#           "name": "distilroberta-finetuned-financial-news-sentiment-analysis"}#distilroberta-FT-financial-news-sentiment-analysis
-#
-# #     "0": "negative","1": "neutral","2": "positive"
-# base_model1 = {"tokenizer": "KernAI/stock-news-distilbert",
-#           "model": AutoModelForSequenceClassification.from_pretrained('KernAI/stock-news-distilbert', num_labels=3).to(device),
-#           "model_for_PT": AutoModelForMaskedLM.from_pretrained('KernAI/stock-news-distilbert'),
-#           "name": "stock-news-distilbert"}#stock-news-distilbert
+base_model0 = {"tokenizer": "FacebookAI/roberta-base",
+          "model": AutoModelForSequenceClassification.from_pretrained('mrm8488/distilroberta-finetuned-financial-news-sentiment-analysis', num_labels=3).to(device),
+          "model_for_PT": AutoModelForMaskedLM.from_pretrained('mrm8488/distilroberta-finetuned-financial-news-sentiment-analysis').to(device),
+          "name": "distilroberta-finetuned-financial-news-sentiment-analysis"}#distilroberta-FT-financial-news-sentiment-analysis
+
+#     "0": "negative","1": "neutral","2": "positive"
+base_model1 = {"tokenizer": "KernAI/stock-news-distilbert",
+          "model": AutoModelForSequenceClassification.from_pretrained('KernAI/stock-news-distilbert', num_labels=3).to(device),
+          "model_for_PT": AutoModelForMaskedLM.from_pretrained('KernAI/stock-news-distilbert'),
+          "name": "stock-news-distilbert"}#stock-news-distilbert
 
 # "0": "positive", "1": "negative", "2": "neutral"
 base_model2 = {"tokenizer": "bert-base-uncased",
@@ -40,10 +44,6 @@ base_model2 = {"tokenizer": "bert-base-uncased",
 #         "FinGPT/fingpt-sentiment_llama2-13b_lora"
 #     ),
 #     "name": "FinGPT"}#FinGPT
-# base_model4 = {
-#     "tokenizer": "SALT-NLP/FLANG-ELECTRA",
-#     "model": AutoModelForSequenceClassification.from_pretrained("SALT-NLP/FLANG-ELECTRA", num_labels=3).to(device),
-#     "name": "FLANG-ELECTRA"} #Flang-Electra
 
 # base_model3 = {
 #     "tokenizer": "NousResearch/Llama-2-13b-hf",
@@ -70,7 +70,10 @@ base_model2 = {"tokenizer": "bert-base-uncased",
 # }#FLANG-ELECTRA
 # base_models = [base_model0, base_model1, base_model2, base_model4]
 # base_models = [base_model0, base_model1, base_model2]
-base_models = [base_model2]
+base_models = [base_model0]
+
+models_names = ['distilroberta-finetuned-financial-news-sentiment-analysis', 'stock-news-distilbert', 'Finbert']
+models_types = ['base', 'pt', 'rd_pt']
 NUM_DATASETS = 5
 NUM_TRAIN_EPOCH = 3
 
@@ -105,13 +108,23 @@ def convert_labels_to_int(example):
     example['label'] = int(example['label'])
     return example
 
-all_agree_df = pd.read_csv('Data/test_datasets/all_agree_dataset.csv').apply(convert_labels_to_int, axis=1)
-all_agree_dataset = Dataset.from_pandas(all_agree_df)
+# all_agree_df = pd.read_csv('Data/test_datasets/all_agree_dataset.csv').apply(convert_labels_to_int, axis=1)
+# all_agree_dataset = Dataset.from_pandas(all_agree_df)
+#
+# consent_75_df = pd.read_csv('Data/test_datasets/consent_75_dataset.csv').apply(convert_labels_to_int, axis=1)
+# consent_75_dataset = Dataset.from_pandas(consent_75_df)
 
-consent_75_df = pd.read_csv('Data/test_datasets/consent_75_dataset.csv').apply(convert_labels_to_int, axis=1)
-consent_75_dataset = Dataset.from_pandas(consent_75_df)
+eval_consent_75_df = pd.read_csv('Data/test_datasets/split_eval_test/consent_75_eval.csv').apply(convert_labels_to_int, axis=1)
+eval_consent_75 = Dataset.from_pandas(eval_consent_75_df)
 
-eval_datasets = [consent_75_dataset, all_agree_dataset]
+eval_all_agree_df = pd.read_csv('Data/test_datasets/split_eval_test/all_agree_eval.csv').apply(convert_labels_to_int, axis=1)
+eval_all_agree = Dataset.from_pandas(eval_all_agree_df)
+
+# check_eval_df = pd.read_csv('Data/Processed_Financial_News.csv')
+# check_eval_dataset = Dataset.from_pandas(check_eval_df)
+
+eval_datasets = [eval_consent_75, eval_all_agree]
+
 
 # def compute_metrics(eval_pred):
 #     accuracy_metric = evaluate.load("accuracy")
@@ -136,6 +149,106 @@ def tokenize_function(tokenizer, examples):
     output = tokenizer(examples['text'], padding='max_length', truncation=True, max_length=512)
     return output
 
+accuracy_metric = evaluate.load("./local_metrics/accuracy")
+precision_metric = evaluate.load("./local_metrics/precision")
+recall_metric = evaluate.load("./local_metrics/recall")
+f1_metric = evaluate.load("./local_metrics/f1")
+
+def compute_metrics(eval_pred, model_name):
+  logits, labels = eval_pred
+  predictions = np.argmax(logits, axis=-1)
+
+  # needed while using the FINBERT & base_stock-news-distilbert, since its labels are not matching
+  if 'Finbert' in model_name:
+      id2label = {0: 2, 1: 0, 2: 1}
+      mapped_predictions = [id2label[pred] for pred in predictions]
+  elif 'stock-news-distilbert' in model_name:
+      id2label = {0: 1, 1: 0, 2: 2}
+      mapped_predictions = [id2label[pred] for pred in predictions]
+  else:
+      mapped_predictions = predictions
+
+  # Compute accuracy, precision, recall, and f1 using either mapped or original predictions
+  accuracy = accuracy_metric.compute(predictions=mapped_predictions, references=labels)
+  precision = precision_metric.compute(predictions=mapped_predictions, references=labels, average='macro')
+  recall = recall_metric.compute(predictions=mapped_predictions, references=labels, average='macro')
+  f1 = f1_metric.compute(predictions=mapped_predictions, references=labels, average='macro')
+
+  return {
+      'accuracy': accuracy['accuracy'],
+      'precision': precision['precision'],
+      'recall': recall['recall'],
+      'f1': f1['f1']
+  }
+
+def eval_fine_tuned_models():
+
+    for model_name in models_names:
+        # Set up evaluation arguments
+        evaluation_args = TrainingArguments(
+            output_dir=f"./eval_checkpoints/{model_name}/{model_type}",
+            per_device_eval_batch_size=2,
+            logging_dir='./logs',
+            do_eval=True,
+            save_strategy="epoch",
+        )
+        for model_type in models_types:
+
+            # Load the Fine-Tuned model for evaluation
+            save_directory = f'./Saved_models/fine-tuned/{model_name}_{model_type}'
+            model = AutoModelForSequenceClassification.from_pretrained(save_directory)
+            tokenizer = AutoTokenizer.from_pretrained(save_directory)
+            data_collator = DataCollatorWithPadding(tokenizer=tokenizer, return_tensors='pt')
+
+            idx = 0
+            for eval_dataset in eval_datasets:
+                if (idx == 0):
+                    eval_dataset_name = 'eval_75_consent'
+                else:
+                    eval_dataset_name = 'eval_all_agree'
+                idx += 1
+
+                print(f"Starts evaluating the FT model: {model_name} of type: {model_type} on dataset: {eval_dataset_name}")
+
+                tokenized_eval_dataset = eval_dataset.map(lambda x: tokenize_function(tokenizer, x),batched=True)
+
+                # Initialize the Trainer for the evaluation phase
+                trainer = Trainer(
+                    model=model,
+                    args=evaluation_args,
+                    eval_dataset=tokenized_eval_dataset,
+                    tokenizer=tokenizer,
+                    data_collator=data_collator,
+                    compute_metrics=lambda eval_pred: compute_metrics(eval_pred, model_name),
+                )
+
+                evaluation_results = trainer.evaluate()
+
+                results_with_model = {
+                    "Type": model_type,
+                    "model_name": model_name,
+                    "results": evaluation_results,
+                    "eval_dataset": eval_dataset_name,
+                    "evaluation_args": {
+                        "output_dir": "./eval_checkpoints",
+                        "per_device_eval_batch_size": 2,
+                        "logging_dir": './logs',
+                        "do_eval": True,
+                        "save_strategy": "epoch"
+                    }
+                }
+
+                results_file_name = f'{eval_dataset_name}.txt'
+                results_dir = f"./Evaluation_results/FT_{now}/{model_name}/{model_type}/"
+                os.makedirs(results_dir, exist_ok=True)
+                results_file_path = os.path.join(results_dir, results_file_name)
+
+                with open(results_file_path, "w") as file:
+                    file.write(json.dumps(results_with_model, indent=4))
+
+                print(
+                    f"Evaluation results for the model: {model_name} of type: {model_type} on eval dataset: {eval_dataset_name} saved to {results_file_name}")
+
 
 # fine-tuning each model(pt, rd_pt & base) on all ft datasets, saving the ft model, and evaluating the model on the evaluation dataset.
 def evaluating():
@@ -143,11 +256,13 @@ def evaluating():
     for model in base_models:
 
         model_name = model['name']
-        # base_directory = f'./Saved_models/pre_trained/Pre-Trained_{model_name}'
-        pt_directory = f'./Saved_models/pre_trained/Pre-Trained_{model_name}'
-        rd_pt_directory = f'./Saved_models/pre_trained/Pre-Trained+RD_{model_name}'
 
-        base_tokenizer = AutoTokenizer.from_pretrained(model["tokenizer"])
+        base_directory = f'./Saved_models/fine-tuned/{model_name}_base'
+        pt_directory = f'./Saved_models/fine-tuned/{model_name}_pt'
+        rd_pt_directory = f'./Saved_models/fine-tuned/{model_name}_rd_pt'
+
+        base_model = AutoModelForSequenceClassification.from_pretrained(base_directory)
+        base_tokenizer = AutoTokenizer.from_pretrained(base_directory)
 
         pt_model = AutoModelForSequenceClassification.from_pretrained(pt_directory)
         pt_tokenizer = AutoTokenizer.from_pretrained(pt_directory)
@@ -163,7 +278,7 @@ def evaluating():
         base_model = {
             'name': model_name,
             'type': 'base',
-            'model': model['model'],
+            'model': base_model,
             'tokenizer': base_tokenizer,
             'data_collator': base_collator
         }
@@ -183,10 +298,11 @@ def evaluating():
         }
         base_and_pt_models = [base_model, pre_train_model, rd_pre_train_model]
 
+
         # Set up evaluation arguments
         evaluation_args = TrainingArguments(
-            output_dir="./eval_checkpoints",
-            per_device_eval_batch_size=8,
+            output_dir=f"./eval_checkpoints/{model_name}/{model_type}",
+            per_device_eval_batch_size=2,
             logging_dir='./logs',
             do_eval=True,
             save_strategy="epoch",
@@ -195,9 +311,9 @@ def evaluating():
             idx = 0
             for eval_dataset in eval_datasets:
                 if (idx == 0):
-                    eval_dataset_name = '75_consent'
+                    eval_dataset_name = 'eval_75_consent'
                 else:
-                    eval_dataset_name = 'all_agree'
+                    eval_dataset_name = 'eval_all_agree'
                 idx += 1
 
                 print(f"Starts evaluating model: {inner_model['name']} of type: {inner_model['type']} of dataset: {eval_dataset_name}")
@@ -216,7 +332,7 @@ def evaluating():
                     eval_dataset=tokenized_eval_dataset,
                     tokenizer=inner_model['tokenizer'],
                     data_collator=inner_model['data_collator'],
-                    compute_metrics=compute_manual_metrics,
+                    compute_metrics=lambda eval_pred : compute_metrics(eval_pred, model_name),
                 )
 
                 evaluation_results = trainer.evaluate()
@@ -225,11 +341,19 @@ def evaluating():
                     "Type": inner_model['type'],
                     "model_name": inner_model['name'],
                     "results": evaluation_results,
-                    "eval_dataset": eval_dataset_name
+                    "eval_dataset": eval_dataset_name,
+                    "evaluation_args" : {
+                                        "output_dir": "./eval_checkpoints",
+                                        "per_device_eval_batch_size": 2,
+                                        "logging_dir": './logs',
+                                        "do_eval": True,
+                                        "save_strategy": "epoch"
+                                        }
                 }
 
-                results_file_name = f'{model_name}_{model_type}_{eval_dataset_name}.txt'
-                results_dir = "./Evaluation_results/FT/"
+                results_file_name = f'{eval_dataset_name}.txt'
+                results_dir = f"./Evaluation_results/FT_{now}/{model_name}/{model_type}/"
+                os.makedirs(results_dir, exist_ok=True)
                 results_file_path = os.path.join(results_dir, results_file_name)
 
                 with open(results_file_path, "w") as file:
@@ -237,4 +361,4 @@ def evaluating():
 
                 print(f"Evaluation results for the model: {model_name} of type: {model_type} on eval dataset: {eval_dataset_name} saved to {results_file_name}")
 
-evaluating()
+eval_fine_tuned_models()

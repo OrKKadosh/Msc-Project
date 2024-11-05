@@ -196,13 +196,19 @@ def fine_tuning_fixed():
             results_with_model = {
                 "Type": inner_model['type'],
                 "model_name": inner_model['name'],
-                "results": evaluation_results
+                "results": evaluation_results,
+                "eval_args" : evaluation_args,
             }
 
             model_type = inner_model['type']
 
-            results_file_name = f'{model_name}_{model_type}.txt'
-            results_dir = "./Evaluation_results/no_FT/"
+            # results_file_name = f'{model_name}_{model_type}.txt'
+            # results_dir = f"./Evaluation_results/no_FT/"
+            # results_file_path = os.path.join(results_dir, results_file_name)
+
+            results_file_name = f'{eval_dataset_name}.txt'
+            results_dir = f"./Evaluation_results/no_FT{now}/{model_name}/{model_type}/"
+            os.makedirs(results_dir, exist_ok=True)
             results_file_path = os.path.join(results_dir, results_file_name)
 
             with open(results_file_path, "w") as file:
