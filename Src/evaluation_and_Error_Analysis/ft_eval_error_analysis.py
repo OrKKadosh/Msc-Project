@@ -1,3 +1,5 @@
+# RUNS ON BOTH FILES: eval_all_agree & eval_75_consent
+
 from datetime import datetime
 
 from sklearn.metrics import precision_score, recall_score, f1_score, accuracy_score, confusion_matrix, \
@@ -31,17 +33,37 @@ def error_analysis(model_name, model_type,data, eval_dataset,eval_dataset_name):
 
     print(f"Starts Error_Analysis on {model_name} of type: {model_type} on {eval_dataset_name}")
 
+    probs = np.max(data['logits'], axis=1)  # Get the max probability for each prediction
+
     eval_df = pd.DataFrame({
         'text': eval_dataset['text'],
         'true_label': eval_dataset['label'],
-        'predicted_label': data['predictions']
+        'predicted_label': data['predictions'],
+        'confidence' : probs,
     })
+
+    eval_df['text_length'] = eval_df['text'].apply(lambda x: len(x.split()))
+
     # os.makedirs(f'Data/Error_Analysis/FT/{model_name}/{model_type}', exist_ok=True)
     misclassified_df = eval_df[eval_df['true_label'] != eval_df['predicted_label']]
     # misclassified_df.to_csv(f'Data/Error_Analysis/FT/{now}/{model_name}/{model_type}/misclassified_{eval_dataset_name}.csv', index=False)
     misclassified_df.to_csv(f'{save_directory}/misclassified_{eval_dataset_name}.csv', index=False)
 
-    # ___Confusion Matrix___
+    # ___________________________Big Errors___________________________
+    misclassified_pos_to_neg = eval_df[(eval_df['true_label'] == 2 & eval_df['predicted_label'] == 0)]
+    misclassified_pos_to_neg.to_csv(f'{save_directory}/misclassified_pos_to_neg_{eval_dataset_name}.csv', index=False)
+
+    misclassified_neg_to_pos = eval_df[(eval_df['true_label'] == 0 & eval_df['predicted_label'] == 2)]
+    misclassified_neg_to_pos.to_csv(f'{save_directory}/misclassified_neg_to_pos_{eval_dataset_name}.csv', index=False)
+
+    big_errors_path =  f'{save_directory}/misclassified_big_errors_report_{eval_dataset_name}.txt'
+
+    with open(big_errors_path, 'w') as file:
+        file.write(f"Number of errors where the true_label is 2 and the predicted_label is 0 : {len(misclassified_pos_to_neg)} \n")
+        file.write(f"Number of errors where the true_label is 0 and the predicted_label is 2 : {len(misclassified_neg_to_pos)}")
+
+
+    # ___________________________Confusion Matrix___________________________
     cm = confusion_matrix(eval_df['true_label'], eval_df['predicted_label'], labels=[0, 1, 2])
     disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=["negative", "neutral", "positive"])
     disp.plot()
@@ -49,20 +71,23 @@ def error_analysis(model_name, model_type,data, eval_dataset,eval_dataset_name):
     plt.savefig(f"{save_directory}/confusion_matrix_{eval_dataset_name}.png")  # Save as an image
     plt.show()  # Optionally display the plot
 
-    # ___Classification report___
+
+    # ___________________________Classification report___________________________
     report = classification_report(eval_df['true_label'], eval_df['predicted_label'],target_names=["negative", "neutral", "positive"])
     print(report)  # Display report in console
     with open(f"{save_directory}/classification_report_{eval_dataset_name}.txt","w") as file:
         file.write(report)
 
-    # ___FP & FN___
+
+    # ___________________________FP & FN___________________________
     false_positives = eval_df[(eval_df['true_label'] != 0) & (eval_df['predicted_label'] == 0)]  # Model predicts negative, but should be neutral/positive
     false_positives.to_csv(f'{save_directory}/false_positives_{eval_dataset_name}.csv', index=False)
 
     false_negatives = eval_df[(eval_df['true_label'] == 0) & (eval_df['predicted_label'] != 0)]  # Model fails to predict negative
     false_negatives.to_csv(f'{save_directory}/false_negatives_{eval_dataset_name}.csv', index=False)
 
-    # ___Word cloud for misclassified texts___
+
+    # ___________________________Word cloud for misclassified texts___________________________
     misclassified_text = " ".join(misclassified_df['text'].values)
     wordcloud = WordCloud(width=800, height=400).generate(misclassified_text)
     plt.figure(figsize=(10, 5))
@@ -72,44 +97,75 @@ def error_analysis(model_name, model_type,data, eval_dataset,eval_dataset_name):
     plt.savefig(f'{save_directory}/misclassified_wordcloud_{eval_dataset_name}.png', format="png", dpi=300)
     plt.show()
 
-    # ___Low confidence misclassification___
-    probs = np.max(data['logits'], axis=1)  # Get the max probability for each prediction
-    eval_df['confidence'] = probs
-    low_confidence_misclassifications = eval_df[(eval_df['true_label'] != eval_df['predicted_label']) & (eval_df['confidence'] < 0.6)]
-    low_confidence_misclassifications.to_csv(f'{save_directory}/low_confidence_misclassifications_{eval_dataset_name}.csv',index=False)
 
-    # ___Text Length___
+    # ___________________________Low confidence misclassification___________________________
+    # Calculate the 25th percentile of the confidence scores
+    low_confidence_threshold = np.percentile(eval_df['confidence'], 25)
+    high_confidence_threshold = np.percentile(eval_df['confidence'], 75)
+
+    low_confidence_misclassifications = eval_df[(eval_df['true_label'] != eval_df['predicted_label']) & (eval_df['confidence'] < low_confidence_threshold)]
+    low_confidence_misclassifications['Low_confidence_threshold'] = low_confidence_threshold
+    high_confidence_misclassifications = eval_df[(eval_df['true_label'] != eval_df['predicted_label']) & (eval_df['confidence'] >= high_confidence_threshold)]
+    high_confidence_misclassifications['High_confidence_threshold'] = high_confidence_threshold
+
+    low_confidence_misclassifications.to_csv(f'{save_directory}/low_confidence_misclassifications_{eval_dataset_name}.csv',index=False)
+    high_confidence_misclassifications.to_csv(f'{save_directory}/high_confidence_misclassifications_{eval_dataset_name}.csv', index=False)
+
+    avg_confidence = eval_df['confidence'].sum() / len(eval_df)
+    with open(f'Data/Error_Analysis/FT/{now}/{model_name}/{model_type}/confidence_average_{eval_dataset_name}.txt', 'w') as file:
+        file.write(f'The Average confidence score for this dataset : {avg_confidence}')
+
+
+    # ___________________________True Neutral to Predicted Positive___________________________
+    misclassified_neu_to_pos = eval_df[(eval_df['true_label'] == 1 & eval_df['predicted_label'] == 2)]
+    misclassified_neu_to_pos.to_csv(f'Data/Error_Analysis/FT/{now}/{model_name}/{model_type}/misclassified_neu_to_pos.csv', index=False)
+
+    # ___________________________Text Length___________________________
     length_save_directory = f'Data/Error_Analysis/FT/{now}/by_text_length/{model_name}/{model_type}'
     os.makedirs(length_save_directory, exist_ok=True)
-    # Add a column for text lengths (in words)
-    eval_df['text_length'] = eval_df['text'].apply(lambda x: len(x.split()))
-    # Classify errors by text length categories
-    short_text_errors = eval_df[(eval_df['text_length'] <= 61) & (eval_df['true_label'] != eval_df['predicted_label'])]
-    median_text_errors = eval_df[(eval_df['text_length'] <= 68) & (eval_df['text_length'] > 61) & (
-                eval_df['true_label'] != eval_df['predicted_label'])]
-    long_text_errors = eval_df[(eval_df['text_length'] > 68) & (eval_df['true_label'] != eval_df['predicted_label'])]
+
+    # Calculate the 33rd and 66th percentiles (quantiles) for text length
+    short_threshold = eval_df['text_length'].quantile(0.33)
+    medium_threshold = eval_df['text_length'].quantile(0.66)
+
+    # Classify errors by text length categories based on calculated thresholds
+    short_text_errors = eval_df[(eval_df['text_length'] <= short_threshold) & (eval_df['true_label'] != eval_df['predicted_label'])]
+    medium_text_errors = eval_df[(eval_df['text_length'] > short_threshold) & (eval_df['text_length'] <= medium_threshold) & (eval_df['true_label'] != eval_df['predicted_label'])]
+    long_text_errors = eval_df[(eval_df['text_length'] > medium_threshold) & (eval_df['true_label'] != eval_df['predicted_label'])]
+
+    # # Classify errors by text length categories
+    # short_text_errors = eval_df[(eval_df['text_length'] <= 61) & (eval_df['true_label'] != eval_df['predicted_label'])]
+    # median_text_errors = eval_df[(eval_df['text_length'] <= 68) & (eval_df['text_length'] > 61) & (
+    #             eval_df['true_label'] != eval_df['predicted_label'])]
+    # long_text_errors = eval_df[(eval_df['text_length'] > 68) & (eval_df['true_label'] != eval_df['predicted_label'])]
+
     # Save the errors in separate files
     short_text_errors.to_csv(f'{length_save_directory}/short_length_errors_{eval_dataset_name}.csv', index=False)
-    median_text_errors.to_csv(f'{length_save_directory}/median_length_errors_{eval_dataset_name}.csv', index=False)
+    medium_text_errors.to_csv(f'{length_save_directory}/median_length_errors_{eval_dataset_name}.csv', index=False)
     long_text_errors.to_csv(f'{length_save_directory}/long_length_errors_{eval_dataset_name}.csv', index=False)
+
     # Calculate the total number of examples for each text length category
     short_text_total = eval_df[eval_df['text_length'] <= 61]
     median_text_total = eval_df[(eval_df['text_length'] <= 68) & (eval_df['text_length'] > 61)]
     long_text_total = eval_df[eval_df['text_length'] > 68]
+
     # Calculate error rates for each length category
     short_error_rate = len(short_text_errors) / len(short_text_total) * 100 if len(short_text_total) > 0 else 0
-    median_error_rate = len(median_text_errors) / len(median_text_total) * 100 if len(median_text_total) > 0 else 0
+    median_error_rate = len(medium_text_errors) / len(median_text_total) * 100 if len(median_text_total) > 0 else 0
     long_error_rate = len(long_text_errors) / len(long_text_total) * 100 if len(long_text_total) > 0 else 0
+
     # Define the path for saving the error rate summary
     error_rate_summary_path = f'{length_save_directory}/error_rate_summary_{eval_dataset_name}.txt'
+
     # Write the error rates to the text file
     with open(error_rate_summary_path, 'w') as file:
         file.write(f"Error Rate Summary for {eval_dataset_name}:\n")
-        file.write(f"Short text error rate: {short_error_rate:.2f}%\n")
-        file.write(f"Median text error rate: {median_error_rate:.2f}%\n")
-        file.write(f"Long text error rate: {long_error_rate:.2f}%\n")
+        file.write(f"Short text (Length <= {short_threshold} words) error rate: {short_error_rate:.2f}%\n")
+        file.write(f"Median text ({short_threshold} < Length <= {medium_threshold} words) error rate: {median_error_rate:.2f}%\n")
+        file.write(f"Long text (Length > {medium_threshold} words) error rate: {long_error_rate:.2f}%\n")
     print(f"Error rate summary saved to {error_rate_summary_path}")
 
+    # ________________________________________________________________
 
 def convert_labels_to_int(example):
     # Convert the labels to integers

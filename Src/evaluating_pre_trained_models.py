@@ -206,7 +206,7 @@ def fine_tuning_fixed():
             # results_dir = f"./Evaluation_results/no_FT/"
             # results_file_path = os.path.join(results_dir, results_file_name)
 
-            results_file_name = f'{eval_dataset_name}.txt'
+            results_file_name = f"{eval_dataset['name']}.txt"
             results_dir = f"./Evaluation_results/no_FT{now}/{model_name}/{model_type}/"
             os.makedirs(results_dir, exist_ok=True)
             results_file_path = os.path.join(results_dir, results_file_name)

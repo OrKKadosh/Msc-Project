@@ -23,19 +23,19 @@ print(f"Using device: {device}")
 # base_model0 = {"tokenizer": "FacebookAI/roberta-base",
 #           "model": AutoModelForSequenceClassification.from_pretrained('mrm8488/distilroberta-finetuned-financial-news-sentiment-analysis', num_labels=3).to(device),
 #           "model_for_PT": AutoModelForMaskedLM.from_pretrained('mrm8488/distilroberta-finetuned-financial-news-sentiment-analysis').to(device),
-#           "name": "distilroberta-finetuned-financial-news-sentiment-analysis"}#distilroberta-FT-financial-news-sentiment-analysis
+#           "name": "distilroberta"}#distilroberta-FT-financial-news-sentiment-analysis
 #
 # #     "0": "negative","1": "neutral","2": "positive"
 # base_model1 = {"tokenizer": "KernAI/stock-news-distilbert",
 #           "model": AutoModelForSequenceClassification.from_pretrained('KernAI/stock-news-distilbert', num_labels=3).to(device),
 #           "model_for_PT": AutoModelForMaskedLM.from_pretrained('KernAI/stock-news-distilbert'),
-#           "name": "stock-news-distilbert"}#stock-news-distilbert
+#           "name": "distilbert"}#stock-news-distilbert
 #
 # # "0": "positive", "1": "negative", "2": "neutral"
 # base_model2 = {"tokenizer": "bert-base-uncased",
 #           "model": AutoModelForSequenceClassification.from_pretrained('ProsusAI/finbert', num_labels=3).to(device),
 #           "model_for_PT": AutoModelForMaskedLM.from_pretrained('ProsusAI/finbert').to(device),
-#           "name": "Finbert"}#FinBert
+#           "name": "finbert"}#FinBert
 # base_model3 = {
 #     "tokenizer": "NousResearch/Llama-2-13b-hf",
 #     "model": PeftModel.from_pretrained(
@@ -71,7 +71,7 @@ base_model4 = {
     "tokenizer": "SALT-NLP/FLANG-ELECTRA",
     "model": AutoModelForSequenceClassification.from_pretrained("SALT-NLP/FLANG-ELECTRA", num_labels=3).to(device),
     "model_for_PT": AutoModelForMaskedLM.from_pretrained("SALT-NLP/FLANG-ELECTRA").to(device),
-    "name": "FLANG-ELECTRA"
+    "name": "electra"
 }#FLANG-ELECTRA
 base_models = [base_model4]
 NUM_DATASETS = 5
@@ -264,10 +264,10 @@ def fine_tuning_fixed():
 
         base_tokenizer = AutoTokenizer.from_pretrained(model["tokenizer"])
 
-        pt_model = AutoModelForSequenceClassification.from_pretrained(pt_directory)
+        pt_model = AutoModelForSequenceClassification.from_pretrained(pt_directory, num_labels=3).to(device)
         pt_tokenizer = AutoTokenizer.from_pretrained(pt_directory)
 
-        rd_pt_model = AutoModelForSequenceClassification.from_pretrained(rd_pt_directory)
+        rd_pt_model = AutoModelForSequenceClassification.from_pretrained(rd_pt_directory, num_labels=3).to(device)
         rd_pt_tokenizer = AutoTokenizer.from_pretrained(rd_pt_directory)
 
         base_collator = DataCollatorWithPadding(tokenizer=base_tokenizer, return_tensors='pt')
@@ -296,11 +296,11 @@ def fine_tuning_fixed():
             "tokenizer": rd_pt_tokenizer,
             "data_collator": rd_pt_data_collator,
         }
-        base_and_pt_models = [base_model, pre_train_model, rd_pre_train_model]
+        base_and_pt_models = [base_model]
 
         # Set up training arguments
         training_args = TrainingArguments(
-            output_dir=f"./train_checkpoints/{model_name}/{model_type}",
+            output_dir=f"./train_checkpoints/{model_name}",
             learning_rate=2e-5,
             per_device_train_batch_size=8,
             num_train_epochs=NUM_TRAIN_EPOCH,
@@ -308,14 +308,14 @@ def fine_tuning_fixed():
             save_strategy="epoch",
             save_steps=500,
         )
-        # Set up evaluation arguments
-        evaluation_args = TrainingArguments(
-            output_dir="./eval_checkpoints",
-            per_device_eval_batch_size=2,
-            logging_dir='./logs',
-            do_eval=True,
-            save_strategy="epoch",
-        )
+        # # Set up evaluation arguments
+        # evaluation_args = TrainingArguments(
+        #     output_dir="./eval_checkpoints",
+        #     per_device_eval_batch_size=2,
+        #     logging_dir='./logs',
+        #     do_eval=True,
+        #     save_strategy="epoch",
+        # )
 
         for inner_model in base_and_pt_models:  # Iterate over models (base, pre-trained, RD pre-trained)
 
@@ -323,10 +323,12 @@ def fine_tuning_fixed():
             tokenized_eval_dataset = eval_dataset.map(lambda x: tokenize_function(inner_model["tokenizer"], x),batched=True)  # Tokenize eval
 
             # __________Using Lora for Electra model__________
-            lora_config = LoraConfig(task_type=TaskType.SEQ_CLS, r=8, lora_alpha=16,
+            if "electra" in model_name:
+                lora_config = LoraConfig(task_type=TaskType.SEQ_CLS, r=8, lora_alpha=16,
                                      lora_dropout=0.05)
-            chosen_model = get_peft_model(inner_model["model"], lora_config)  # applying LORA
-            # ________________________________________________
+                chosen_model = get_peft_model(inner_model["model"], lora_config)  # applying LORA
+            else:
+                chosen_model = inner_model["model"]
 
             for idx in range(NUM_DATASETS):  # Go through all datasets
 
@@ -359,45 +361,45 @@ def fine_tuning_fixed():
 
             print(f"Model saved to {save_directory} after training on all datasets.")
 
-            print(f"Starts evaluating {model_name} of type: {model_type}")
-
-            # Load the trained model for evaluation
-            ft_model = AutoModelForSequenceClassification.from_pretrained(save_directory)
-
-            # Initialize the Trainer for the evaluation phase
-            trainer = Trainer(
-                model=ft_model,
-                args=evaluation_args,
-                eval_dataset=tokenized_eval_dataset,
-                tokenizer=inner_model['tokenizer'],
-                data_collator=inner_model['data_collator'],
-                compute_metrics=lambda eval_pred : compute_metrics(eval_pred, model_name),
-            )
-
-            evaluation_results = trainer.evaluate()
-
-            results_with_model = {
-                "Type": inner_model['type'],
-                "model_name": inner_model['name'],
-                "results": evaluation_results,
-                "eval_dataset": '75_consent',
-                "evaluation_args": {
-                    "output_dir": "./eval_checkpoints",
-                    "per_device_eval_batch_size": 2,
-                    "logging_dir": './logs',
-                    "do_eval": True,
-                    "save_strategy": "epoch"
-                }
-            }
-
-            results_file_name = '75_consent.txt'
-            results_dir = f"./Evaluation_results/ft&eval_electra/{model_name}/{model_type}/"
-            os.makedirs(results_dir, exist_ok=True)
-            results_file_path = os.path.join(results_dir, results_file_name)
-
-            with open(results_file_path, "w") as file:
-                file.write(json.dumps(results_with_model, indent=4))
-
-            print(f"Evaluation results for the model: {model_name} of type: {model_type} saved to {results_dir}")
+            # print(f"Starts evaluating {model_name} of type: {model_type}")
+            #
+            # # Load the trained model for evaluation
+            # ft_model = AutoModelForSequenceClassification.from_pretrained(save_directory)
+            #
+            # # Initialize the Trainer for the evaluation phase
+            # trainer = Trainer(
+            #     model=ft_model,
+            #     args=evaluation_args,
+            #     eval_dataset=tokenized_eval_dataset,
+            #     tokenizer=inner_model['tokenizer'],
+            #     data_collator=inner_model['data_collator'],
+            #     compute_metrics=lambda eval_pred : compute_metrics(eval_pred, model_name),
+            # )
+            #
+            # evaluation_results = trainer.evaluate()
+            #
+            # results_with_model = {
+            #     "Type": inner_model['type'],
+            #     "model_name": inner_model['name'],
+            #     "results": evaluation_results,
+            #     "eval_dataset": '75_consent',
+            #     "evaluation_args": {
+            #         "output_dir": "./eval_checkpoints",
+            #         "per_device_eval_batch_size": 2,
+            #         "logging_dir": './logs',
+            #         "do_eval": True,
+            #         "save_strategy": "epoch"
+            #     }
+            # }
+            #
+            # results_file_name = '75_consent.txt'
+            # results_dir = f"./Evaluation_results/fine-tuned/{model_name}_{model_type}/"
+            # os.makedirs(results_dir, exist_ok=True)
+            # results_file_path = os.path.join(results_dir, results_file_name)
+            #
+            # with open(results_file_path, "w") as file:
+            #     file.write(json.dumps(results_with_model, indent=4))
+            #
+            # print(f"Evaluation results for the model: {model_name} of type: {model_type} saved to {results_dir}")
 
 fine_tuning_fixed()

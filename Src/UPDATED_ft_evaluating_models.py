@@ -72,8 +72,10 @@ base_model2 = {"tokenizer": "bert-base-uncased",
 # base_models = [base_model0, base_model1, base_model2]
 base_models = [base_model0]
 
-models_names = ['distilroberta-finetuned-financial-news-sentiment-analysis', 'stock-news-distilbert', 'Finbert']
-models_types = ['base', 'pt', 'rd_pt']
+# models_names = ['distilroberta-finetuned-financial-news-sentiment-analysis', 'stock-news-distilbert', 'Finbert']
+models_names = ['electra']
+# models_types = ['base', 'pt', 'rd_pt']
+models_types = ['base']
 NUM_DATASETS = 5
 NUM_TRAIN_EPOCH = 3
 
@@ -159,10 +161,10 @@ def compute_metrics(eval_pred, model_name):
   predictions = np.argmax(logits, axis=-1)
 
   # needed while using the FINBERT & base_stock-news-distilbert, since its labels are not matching
-  if 'Finbert' in model_name:
+  if 'finbert' in model_name:
       id2label = {0: 2, 1: 0, 2: 1}
       mapped_predictions = [id2label[pred] for pred in predictions]
-  elif 'stock-news-distilbert' in model_name:
+  elif 'distilbert' in model_name:
       id2label = {0: 1, 1: 0, 2: 2}
       mapped_predictions = [id2label[pred] for pred in predictions]
   else:
@@ -186,7 +188,7 @@ def eval_fine_tuned_models():
     for model_name in models_names:
         # Set up evaluation arguments
         evaluation_args = TrainingArguments(
-            output_dir=f"./eval_checkpoints/{model_name}/{model_type}",
+            output_dir=f"./eval_checkpoints/{model_name}",
             per_device_eval_batch_size=2,
             logging_dir='./logs',
             do_eval=True,
@@ -196,7 +198,7 @@ def eval_fine_tuned_models():
 
             # Load the Fine-Tuned model for evaluation
             save_directory = f'./Saved_models/fine-tuned/{model_name}_{model_type}'
-            model = AutoModelForSequenceClassification.from_pretrained(save_directory)
+            model = AutoModelForSequenceClassification.from_pretrained(save_directory).to(device)
             tokenizer = AutoTokenizer.from_pretrained(save_directory)
             data_collator = DataCollatorWithPadding(tokenizer=tokenizer, return_tensors='pt')
 
@@ -229,13 +231,7 @@ def eval_fine_tuned_models():
                     "model_name": model_name,
                     "results": evaluation_results,
                     "eval_dataset": eval_dataset_name,
-                    "evaluation_args": {
-                        "output_dir": "./eval_checkpoints",
-                        "per_device_eval_batch_size": 2,
-                        "logging_dir": './logs',
-                        "do_eval": True,
-                        "save_strategy": "epoch"
-                    }
+                    "evaluation_args": evaluation_args.to_dict()
                 }
 
                 results_file_name = f'{eval_dataset_name}.txt'

@@ -16,6 +16,7 @@ from transformers import AutoModelForSequenceClassification, AutoTokenizer, Auto
     DataCollatorWithPadding, Trainer, TrainingArguments
 import evaluate
 
+print("")
 now = datetime.now()
 now = now.strftime("%Y-%m-%d %H:%M:%S")
 
@@ -78,61 +79,89 @@ NUM_DATASETS = 5
 NUM_TRAIN_EPOCH = 3
 
 def error_analysis(model_name, model_type,data, eval_dataset,eval_dataset_name):
-    print(f"Starts Error_Analysis on {model_name} of type: {model_type}")
+    save_directory = f'Data/Error_Analysis/FT/{now}/{model_name}/{model_type}'
+    os.makedirs(save_directory, exist_ok=True)
+
+    print(f"Starts Error_Analysis on {model_name} of type: {model_type} on {eval_dataset_name}")
 
     eval_df = pd.DataFrame({
         'text': eval_dataset['text'],
         'true_label': eval_dataset['label'],
         'predicted_label': data['predictions']
     })
-    os.makedirs(f'Data/Error_Analysis/FT/{model_name}/{model_type}', exist_ok=True)
+    # os.makedirs(f'Data/Error_Analysis/FT/{model_name}/{model_type}', exist_ok=True)
     misclassified_df = eval_df[eval_df['true_label'] != eval_df['predicted_label']]
-    misclassified_df.to_csv(f'Data/Error_Analysis/FT/{model_name}/{model_type}/misclassified_{eval_dataset_name}.csv', index=False)
+    # misclassified_df.to_csv(f'Data/Error_Analysis/FT/{now}/{model_name}/{model_type}/misclassified_{eval_dataset_name}.csv', index=False)
+    misclassified_df.to_csv(f'{save_directory}/misclassified_{eval_dataset_name}.csv', index=False)
 
-    # CONFUSION MATRIX
+    # ___Confusion Matrix___
     cm = confusion_matrix(eval_df['true_label'], eval_df['predicted_label'], labels=[0, 1, 2])
     disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=["negative", "neutral", "positive"])
     disp.plot()
     plt.title("Confusion Matrix")
-    plt.savefig(f"Data/Error_Analysis/FT/{model_name}/{model_type}/confusion_matrix_{eval_dataset_name}.png")  # Save as an image
+    plt.savefig(f"{save_directory}/confusion_matrix_{eval_dataset_name}.png")  # Save as an image
     plt.show()  # Optionally display the plot
 
-    # classification report
+    # ___Classification report___
     report = classification_report(eval_df['true_label'], eval_df['predicted_label'],target_names=["negative", "neutral", "positive"])
-    with open(f"Data/Error_Analysis/FT/{model_name}/{model_type}/classification_report_{eval_dataset_name}.txt","w") as file:
+    print(report)  # Display report in console
+    with open(f"{save_directory}/classification_report_{eval_dataset_name}.txt","w") as file:
         file.write(report)
 
-    # FP & FN
+    # ___FP & FN___
     false_positives = eval_df[(eval_df['true_label'] != 0) & (eval_df['predicted_label'] == 0)]  # Model predicts negative, but should be neutral/positive
-    false_positives.to_csv(f'Data/Error_Analysis/FT/{model_name}/{model_type}/false_positives_{eval_dataset_name}.csv', index=False)
+    false_positives.to_csv(f'{save_directory}/false_positives_{eval_dataset_name}.csv', index=False)
+
     false_negatives = eval_df[(eval_df['true_label'] == 0) & (eval_df['predicted_label'] != 0)]  # Model fails to predict negative
-    false_negatives.to_csv(f'Data/Error_Analysis/FT/{model_name}/{model_type}/false_negatives_{eval_dataset_name}.csv', index=False)
+    false_negatives.to_csv(f'{save_directory}/false_negatives_{eval_dataset_name}.csv', index=False)
 
-    # BY LENGTH
-    eval_df['text_length'] = eval_df['text'].apply(lambda x: len(x.split()))
-    short_text_errors = eval_df[(eval_df['text_length'] <= 61) & (eval_df['true_label'] != eval_df['predicted_label'])]
-    median_text_errors = eval_df[(eval_df['text_length'] <= 68)& (eval_df['text_length'] > 61) & (eval_df['true_label'] != eval_df['predicted_label'])]
-    long_text_errors = eval_df[(eval_df['text_length'] > 68) & (eval_df['true_label'] != eval_df['predicted_label'])]
-    os.makedirs(f'Data/Error_Analysis/FT/by_text_length/{model_name}/{model_type}', exist_ok=True)
-    short_text_errors.to_csv(f'Data/Error_Analysis/FT/by_text_length/{model_name}/{model_type}/short_length_{eval_dataset_name}.csv', index=False)
-    median_text_errors.to_csv(f'Data/Error_Analysis/FT/by_text_length/{model_name}/{model_type}/median_length_{eval_dataset_name}.csv', index=False)
-    long_text_errors.to_csv(f'Data/Error_Analysis/FT/by_text_length/{model_name}/{model_type}/long_length_{eval_dataset_name}.csv', index=False)
-
-    # word cloud for misclassified texts
+    # ___Word cloud for misclassified texts___
     misclassified_text = " ".join(misclassified_df['text'].values)
     wordcloud = WordCloud(width=800, height=400).generate(misclassified_text)
     plt.figure(figsize=(10, 5))
     plt.imshow(wordcloud, interpolation='bilinear')
     plt.axis("off")
     # Save the plot as a file
-    plt.savefig(f'Data/Error_Analysis/FT/{model_name}/{model_type}/misclassified_wordcloud_{eval_dataset_name}.png', format="png", dpi=300)
+    plt.savefig(f'{save_directory}/misclassified_wordcloud_{eval_dataset_name}.png', format="png", dpi=300)
     plt.show()
 
-    # LOW CONFIDENCE MISCLASSIFICATIONS
+    # ___Low confidence misclassification___
     probs = np.max(data['logits'], axis=1)  # Get the max probability for each prediction
     eval_df['confidence'] = probs
     low_confidence_misclassifications = eval_df[(eval_df['true_label'] != eval_df['predicted_label']) & (eval_df['confidence'] < 0.6)]
-    low_confidence_misclassifications.to_csv(f'Data/Error_Analysis/FT/{model_name}/{model_type}/low_confidence_misclassifications_{eval_dataset_name}.csv',index=False)
+    low_confidence_misclassifications.to_csv(f'{save_directory}/low_confidence_misclassifications_{eval_dataset_name}.csv',index=False)
+
+    # ___Text Length___
+    length_save_directory = f'Data/Error_Analysis/FT/{now}/by_text_length/{model_name}/{model_type}'
+    os.makedirs(length_save_directory, exist_ok=True)
+    # Add a column for text lengths (in words)
+    eval_df['text_length'] = eval_df['text'].apply(lambda x: len(x.split()))
+    # Classify errors by text length categories
+    short_text_errors = eval_df[(eval_df['text_length'] <= 61) & (eval_df['true_label'] != eval_df['predicted_label'])]
+    median_text_errors = eval_df[(eval_df['text_length'] <= 68) & (eval_df['text_length'] > 61) & (
+                eval_df['true_label'] != eval_df['predicted_label'])]
+    long_text_errors = eval_df[(eval_df['text_length'] > 68) & (eval_df['true_label'] != eval_df['predicted_label'])]
+    # Save the errors in separate files
+    short_text_errors.to_csv(f'{length_save_directory}/short_length_errors_{eval_dataset_name}.csv', index=False)
+    median_text_errors.to_csv(f'{length_save_directory}/median_length_errors_{eval_dataset_name}.csv', index=False)
+    long_text_errors.to_csv(f'{length_save_directory}/long_length_errors_{eval_dataset_name}.csv', index=False)
+    # Calculate the total number of examples for each text length category
+    short_text_total = eval_df[eval_df['text_length'] <= 61]
+    median_text_total = eval_df[(eval_df['text_length'] <= 68) & (eval_df['text_length'] > 61)]
+    long_text_total = eval_df[eval_df['text_length'] > 68]
+    # Calculate error rates for each length category
+    short_error_rate = len(short_text_errors) / len(short_text_total) * 100 if len(short_text_total) > 0 else 0
+    median_error_rate = len(median_text_errors) / len(median_text_total) * 100 if len(median_text_total) > 0 else 0
+    long_error_rate = len(long_text_errors) / len(long_text_total) * 100 if len(long_text_total) > 0 else 0
+    # Define the path for saving the error rate summary
+    error_rate_summary_path = f'{length_save_directory}/error_rate_summary_{eval_dataset_name}.txt'
+    # Write the error rates to the text file
+    with open(error_rate_summary_path, 'w') as file:
+        file.write(f"Error Rate Summary for {eval_dataset_name}:\n")
+        file.write(f"Short text error rate: {short_error_rate:.2f}%\n")
+        file.write(f"Median text error rate: {median_error_rate:.2f}%\n")
+        file.write(f"Long text error rate: {long_error_rate:.2f}%\n")
+    print(f"Error rate summary saved to {error_rate_summary_path}")
 
 def convert_labels_to_int(example):
     # Convert the labels to integers
@@ -148,22 +177,22 @@ eval_all_agree = Dataset.from_pandas(eval_all_agree_df)
 
 
 predictions_dict = {
-    'distilRoberta': [
+    'distilroberta': [
         {'type': 'base', 'preds': {'predictions': [], 'labels': [], 'logits': []}},
         {'type': 'pt', 'preds': {'predictions': [], 'labels': [], 'logits': []}},
         {'type': 'rd_pt', 'preds': {'predictions': [], 'labels': [], 'logits': []}}
     ],
-    'distilBert': [
+    'distilbert': [
         {'type': 'base', 'preds': {'predictions': [], 'labels': [], 'logits': []}},
         {'type': 'pt', 'preds': {'predictions': [], 'labels': [], 'logits': []}},
         {'type': 'rd_pt', 'preds': {'predictions': [], 'labels': [], 'logits': []}}
     ],
-    'finBert': [
+    'finbert': [
         {'type': 'base', 'preds': {'predictions': [], 'labels': [], 'logits': []}},
         {'type': 'pt', 'preds': {'predictions': [], 'labels': [], 'logits': []}},
         {'type': 'rd_pt', 'preds': {'predictions': [], 'labels': [], 'logits': []}}
     ],
-    'Electra': [
+    'electra': [
         {'type': 'base', 'preds': {'predictions': [], 'labels': [], 'logits': []}},
         {'type': 'pt', 'preds': {'predictions': [], 'labels': [], 'logits': []}},
         {'type': 'rd_pt', 'preds': {'predictions': [], 'labels': [], 'logits': []}}
@@ -183,21 +212,24 @@ def compute_metrics_and_save_preds(eval_pred, model_name, model_type):
     print(f"compute_metrics_and_save_preds has been called with {model_name} type: {model_type}" )
     logits, labels = eval_pred
     predictions = np.argmax(logits, axis=-1)
+    if model_name == 'finbert':
+        id2label = {0: 2, 1: 0, 2: 1}
+        predictions = [id2label[pred] for pred in predictions]
 
-    # Determine the main model name and access the correct dictionary based on model_type
-    if 'distilroberta' in model_name.lower():
-        model_key = 'distilRoberta'
-    elif 'distilbert' in model_name.lower():
-        model_key = 'distilBert'
-    elif 'finbert' in model_name.lower():
-        model_key = 'finBert'
-    elif 'electra' in model_name.lower():
-        model_key = 'Electra'
-    else:
-        raise ValueError("Model name does not match any expected keys")
+    # # Determine the main model name and access the correct dictionary based on model_type
+    # if 'distilroberta' in model_name.lower():
+    #     model_key = 'distilRoberta'
+    # elif 'distilbert' in model_name.lower():
+    #     model_key = 'distilBert'
+    # elif 'finbert' in model_name.lower():
+    #     model_key = 'finBert'
+    # elif 'electra' in model_name.lower():
+    #     model_key = 'Electra'
+    # else:
+    #     raise ValueError("Model name does not match any expected keys")
 
     # Locate the right nested dictionary by model type and store predictions, labels, and logits
-    for model in predictions_dict[model_key]:
+    for model in predictions_dict[model_name]:
         if model['type'] == model_type:
             model['preds']['predictions'] = predictions
             model['preds']['labels'] = labels
@@ -205,10 +237,10 @@ def compute_metrics_and_save_preds(eval_pred, model_name, model_type):
             break
 
     # needed while using the FINBERT & base_stock-news-distilbert, since its labels are not matching
-    if 'Finbert' in model_name:
+    if model_name == 'finbert':
         id2label = {0: 2, 1: 0, 2: 1}
         mapped_predictions = [id2label[pred] for pred in predictions]
-    elif 'stock-news-distilbert' in model_name:
+    elif model_name == 'distilbert':
         id2label = {0: 1, 1: 0, 2: 2}
         mapped_predictions = [id2label[pred] for pred in predictions]
     else:
@@ -242,7 +274,7 @@ def get_model_name(model_name):
         raise ValueError("Model name does not match any expected keys")
     return model_key
 
-models_names = ['distilroberta-finetuned-financial-news-sentiment-analysis', 'stock-news-distilbert', 'Finbert']
+models_names = ['distilroberta', 'distilbert', 'finbert']
 models_types = ['base', 'pt', 'rd_pt']
 eval_datasets = [{'dataset': eval_consent_75, 'name': 'eval_75_consent'}]
 
@@ -292,19 +324,19 @@ def perform_error_analysis_75_consent():
                     "Type": model_type,
                     "model_name": model_name,
                     "results": evaluation_results,
-                    "eval_args": evaluation_args,
+                    "eval_args": evaluation_args.to_dict(),
                 }
 
 
                 results_file_name = f"{eval_dataset['name']}.txt"
-                results_dir = f"./Evaluation_results/no_FT{now}/{model_name}/{model_type}/"
+                results_dir = f"./Evaluation_results/FT_{eval_dataset['name']}/{model_name}/{model_type}/"
                 os.makedirs(results_dir, exist_ok=True)
                 results_file_path = os.path.join(results_dir, results_file_name)
 
                 with open(results_file_path, "w") as file:
                     file.write(json.dumps(results_with_model, indent=4))
 
-                print(f"Evaluation results for the un-FT model: {model_name} saved to {results_file_name}")
+                print(f"Evaluation results for the FT model: {model_name} saved to {results_file_name}")
                 # Save evaluation results and data for error analysis
                 eval_results.append({
                     'model_name': model_name,
@@ -316,7 +348,7 @@ def perform_error_analysis_75_consent():
 
     # Run error analysis on the collected results
     for result in eval_results:
-        model_name = get_model_name(result['model_name'])
+        model_name = result['model_name']
         model_type = result['model_type']
         eval_dataset = result['eval_dataset']
         eval_dataset_name = result['eval_dataset_name']
