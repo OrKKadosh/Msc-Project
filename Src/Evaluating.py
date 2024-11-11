@@ -1,3 +1,4 @@
+import gc
 import json
 import os
 import re
@@ -8,7 +9,7 @@ import pandas as pd
 import torch
 from datasets import load_dataset, concatenate_datasets, Dataset
 from transformers import AutoModelForSequenceClassification, AutoTokenizer, AutoModelForMaskedLM, \
-    DataCollatorWithPadding, Trainer, TrainingArguments
+    DataCollatorWithPadding, Trainer, TrainingArguments, DataCollatorForLanguageModeling
 import evaluate
 
 now = datetime.now()
@@ -24,22 +25,22 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
 
 #     "0": "negative","1": "neutral","2": "positive"
-base_model0 = {"tokenizer": "FacebookAI/roberta-base",
-          "model": AutoModelForSequenceClassification.from_pretrained('mrm8488/distilroberta-finetuned-financial-news-sentiment-analysis', num_labels=3).to(device),
-          "model_for_PT": AutoModelForMaskedLM.from_pretrained('mrm8488/distilroberta-finetuned-financial-news-sentiment-analysis').to(device),
-          "name": "distilroberta"}#distilroberta-FT-financial-news-sentiment-analysis
-
-#     "0": "negative","1": "neutral","2": "positive"
-base_model1 = {"tokenizer": "KernAI/stock-news-distilbert",
-          "model": AutoModelForSequenceClassification.from_pretrained('KernAI/stock-news-distilbert', num_labels=3).to(device),
-          "model_for_PT": AutoModelForMaskedLM.from_pretrained('KernAI/stock-news-distilbert'),
-          "name": "distilbert"}#stock-news-distilbert
-
-# "0": "positive", "1": "negative", "2": "neutral"
-base_model2 = {"tokenizer": "bert-base-uncased",
-          "model": AutoModelForSequenceClassification.from_pretrained('ProsusAI/finbert', num_labels=3).to(device),
-          "model_for_PT": AutoModelForMaskedLM.from_pretrained('ProsusAI/finbert').to(device),
-          "name": "finbert"}#FinBert
+# base_model0 = {"tokenizer": "FacebookAI/roberta-base",
+#           "model": AutoModelForSequenceClassification.from_pretrained('mrm8488/distilroberta-finetuned-financial-news-sentiment-analysis', num_labels=3).to(device),
+#           "model_for_PT": AutoModelForMaskedLM.from_pretrained('mrm8488/distilroberta-finetuned-financial-news-sentiment-analysis').to(device),
+#           "name": "distilroberta"}#distilroberta-FT-financial-news-sentiment-analysis
+#
+# #     "0": "negative","1": "neutral","2": "positive"
+# base_model1 = {"tokenizer": "KernAI/stock-news-distilbert",
+#           "model": AutoModelForSequenceClassification.from_pretrained('KernAI/stock-news-distilbert', num_labels=3).to(device),
+#           "model_for_PT": AutoModelForMaskedLM.from_pretrained('KernAI/stock-news-distilbert'),
+#           "name": "distilbert"}#stock-news-distilbert
+#
+# # "0": "positive", "1": "negative", "2": "neutral"
+# base_model2 = {"tokenizer": "bert-base-uncased",
+#           "model": AutoModelForSequenceClassification.from_pretrained('ProsusAI/finbert', num_labels=3).to(device),
+#           "model_for_PT": AutoModelForMaskedLM.from_pretrained('ProsusAI/finbert').to(device),
+#           "name": "finbert"}#FinBert
 # base_model3 = {
 #     "tokenizer": "NousResearch/Llama-2-13b-hf",
 #     "model": PeftModel.from_pretrained(
@@ -71,14 +72,14 @@ base_model2 = {"tokenizer": "bert-base-uncased",
 #     "name": "FinGPT"
 # } #FinGPT
 
-base_model4 = {
-    "tokenizer": "SALT-NLP/FLANG-ELECTRA",
-    "model": AutoModelForSequenceClassification.from_pretrained("SALT-NLP/FLANG-ELECTRA", num_labels=3),
-    "model_for_PT": AutoModelForMaskedLM.from_pretrained("SALT-NLP/FLANG-ELECTRA"),
-    "name": "electra"
-}#FLANG-ELECTRA
+# base_model4 = {
+#     "tokenizer": "SALT-NLP/FLANG-ELECTRA",
+#     "model": AutoModelForSequenceClassification.from_pretrained("SALT-NLP/FLANG-ELECTRA", num_labels=3),
+#     "model_for_PT": AutoModelForMaskedLM.from_pretrained("SALT-NLP/FLANG-ELECTRA"),
+#     "name": "electra"
+# }#FLANG-ELECTRA
 # base_models = [base_model0, base_model1, base_model2]
-base_models = [base_model4]
+# base_models = [base_model0]
 NUM_DATASETS = 5
 NUM_TRAIN_EPOCH = 3
 
@@ -383,5 +384,229 @@ def evaluating():
 # for eval_dataset in eval_datasets:
 #     evaluating(eval_dataset)
 
-evaluating()
+def evaluating_pt_models():
 
+    for model in base_models:
+
+        model_name = model['name']
+
+        # base_directory = f"./Saved_models/ft&eval/{model_name}/base"
+        # pt_directory = f"./Saved_models/ft&eval/{model_name}/pt"
+        pt_directory = f"./Saved_models/pre_trained_with_old_pt_{model_name}/Pre-Trained_{model_name}/"
+        # pt_directory = f'./Saved_models/pre_trained_with_old_pt/Pre-Trained_{model_name}'
+        rd_pt_directory = f"./Saved_models/pre_trained/Pre-Trained+RD_{model_name}/"
+
+        base_tokenizer = AutoTokenizer.from_pretrained(model["tokenizer"])
+        # _____________________________________>__________________________________________
+        classification_head = model['model'].classifier  # The classification head layer
+
+        # Load the MLM model as a sequence classification model
+        pt_model = AutoModelForSequenceClassification.from_pretrained(pt_directory, num_labels=3).to(device)
+
+        # Replace the classification head with the extracted head
+        pt_model.classifier = classification_head
+        # _____________________________________<__________________________________________
+        pt_tokenizer = AutoTokenizer.from_pretrained(pt_directory)
+
+        base_tokenizer = AutoTokenizer.from_pretrained(model['tokenizer'])
+
+        # _____________________________________>__________________________________________
+        # Load the MLM model as a sequence classification model
+        rd_pt_model = AutoModelForSequenceClassification.from_pretrained(rd_pt_directory, num_labels=3).to(device)
+
+        # Replace the classification head with the extracted head
+        rd_pt_model.classifier = classification_head
+        # _____________________________________<__________________________________________
+
+        rd_pt_tokenizer = AutoTokenizer.from_pretrained(rd_pt_directory)
+
+        base_collator = DataCollatorWithPadding(tokenizer=base_tokenizer, return_tensors='pt')
+        pt_data_collator = DataCollatorWithPadding(tokenizer=pt_tokenizer, return_tensors='pt')
+        rd_pt_data_collator = DataCollatorWithPadding(tokenizer=rd_pt_tokenizer, return_tensors='pt')
+
+        # Create model dictionaries for base, pre-trained, and RD pre-trained models
+        base_model = {
+            'name': model_name,
+            'type': 'base',
+            'model': model['model'],
+            'tokenizer': base_tokenizer,
+            'data_collator': base_collator
+        } # only for ELECTRA
+        pre_train_model = {
+            "name": model_name,
+            "type": "pt",
+            "model": pt_model,
+            "tokenizer": pt_tokenizer,
+            "data_collator": pt_data_collator,
+        }
+        rd_pre_train_model = {
+            "name": model_name,
+            "type": "rd_pt",
+            "model": rd_pt_model,
+            "tokenizer": rd_pt_tokenizer,
+            "data_collator": rd_pt_data_collator,
+        }
+        # base_and_pt_models = [base_model, pre_train_model, rd_pre_train_model]
+        base_and_pt_models = [base_model, pre_train_model]
+
+
+
+        # Set up evaluation arguments
+        evaluation_args = TrainingArguments(
+            output_dir="./eval_checkpoints",
+            per_device_eval_batch_size=2,
+            logging_dir='./logs',
+            do_eval=True,
+            save_strategy="epoch",
+        )
+
+        evaluation_args = TrainingArguments(
+            output_dir="./eval_checkpoints",
+            per_device_eval_batch_size=8,
+            logging_dir='./logs',
+            do_eval=True,
+            save_strategy="epoch",
+        )
+
+        for inner_model in base_and_pt_models:  # Iterate over models (base, pre-trained, RD pre-trained)
+            for eval_dataset in eval_dataset_dict:
+                tokenized_eval_dataset = eval_dataset['dataset'].map(lambda x: tokenize_function(inner_model["tokenizer"], x),batched=True)  # Tokenize eval
+
+                model_type = inner_model['type']
+
+                print(f"Starts evaluating {model_name} of type: {model_type}")
+
+
+                # Initialize the Trainer for the evaluation phase
+                trainer = Trainer(
+                    model=inner_model['model'],
+                    args=evaluation_args,
+                    eval_dataset=tokenized_eval_dataset,
+                    tokenizer=inner_model['tokenizer'],
+                    data_collator=inner_model['data_collator'],
+                    compute_metrics=lambda eval_pred : compute_metrics(eval_pred, model_name),
+                )
+
+                evaluation_results = trainer.evaluate()
+
+                results_with_model = {
+                    "Type": inner_model['type'],
+                    "model_name": inner_model['name'],
+                    "results": evaluation_results,
+                    "eval_dataset": eval_dataset['name'],
+                    "evaluation_args": evaluation_args.to_dict()
+                }
+
+
+                results_file_name = f"{eval_dataset['name']}.txt"
+                results_dir = f"./Evaluation_results/eval_{now}/{model_name}/{model_type}/"
+                os.makedirs(results_dir, exist_ok=True)
+                results_file_path = os.path.join(results_dir, results_file_name)
+
+                with open(results_file_path, "w") as file:
+                    file.write(json.dumps(results_with_model, indent=4))
+
+                print(f"Evaluation results for the model: {model_name} of type: {model_type} saved to {results_dir}")
+
+# check that the mlm accuracy for the py model makes sense
+def check_mlm_models():
+
+    # Set up Trainer with evaluation arguments
+    training_args = TrainingArguments(
+        output_dir="./eval_checkpoints",
+        per_device_eval_batch_size=4,
+        logging_dir='./logs',
+        do_eval=True,
+        evaluation_strategy="epoch",
+    )
+    models_names = ['distilroberta', 'distilbert', 'finbert']
+
+    pretrain_dataset = load_dataset('Lettria/financial-articles').remove_columns(['source_name', 'url', 'origin'])['train']
+    pretrain_dataset = pretrain_dataset.rename_column("content", "text")
+    split_dataset = pretrain_dataset.train_test_split(0.1, seed=1694)
+    small_pt_dataset = split_dataset["test"]
+
+    for model_name in models_names:
+        # Load pre-trained MLM model and tokenizer
+        pt_directory  = f"./Saved_models/pre_trained/Pre-Trained_{model_name}"
+        pt_model = AutoModelForMaskedLM.from_pretrained(pt_directory)
+        pt_tokenizer = AutoTokenizer.from_pretrained(pt_directory)
+        pt_tokenized_eval_dataset = small_pt_dataset.map(lambda x: tokenize_function(pt_tokenizer, x),batched=True)
+
+        rd_pt_directory = f"./Saved_models/pre_trained/Pre-Trained+RD_{model_name}"
+        rd_pt_model = AutoModelForMaskedLM.from_pretrained(rd_pt_directory)
+        rd_pt_tokenizer = AutoTokenizer.from_pretrained(rd_pt_directory)
+        rd_pt_tokenized_eval_dataset = small_pt_dataset.map(lambda x: tokenize_function(rd_pt_tokenizer, x),batched=True)
+
+
+        # Mask tokens with DataCollatorForLanguageModeling
+        pt_data_collator = DataCollatorForLanguageModeling(tokenizer=pt_tokenizer, mlm=True, mlm_probability=0.15)
+        rd_pt_data_collator = DataCollatorForLanguageModeling(tokenizer=rd_pt_tokenizer, mlm=True, mlm_probability=0.15)
+
+
+
+        # Define evaluation function to calculate MLM accuracy
+        def compute_mlm_metrics(eval_pred):
+            logits, labels = eval_pred
+            predictions = np.argmax(logits, axis=-1)
+
+            # Only consider masked tokens for accuracy calculation
+            mask = labels != -100
+            correct_predictions = (predictions[mask] == labels[mask]).sum()
+            total_predictions = mask.sum()
+
+            accuracy = correct_predictions / total_predictions
+            return {"mlm_accuracy": accuracy}
+
+        # Initialize Trainer
+        pt_trainer = Trainer(
+            model=pt_model,
+            args=training_args,
+            eval_dataset=pt_tokenized_eval_dataset,
+            data_collator=pt_data_collator,
+            compute_metrics=compute_mlm_metrics,
+        )
+
+        rd_pt_trainer = Trainer(
+            model=rd_pt_model,
+            args=training_args,
+            eval_dataset=rd_pt_tokenized_eval_dataset,
+            data_collator=rd_pt_data_collator,
+            compute_metrics=compute_mlm_metrics,
+        )
+
+        # Run evaluation and print results
+        pt_eval_results = pt_trainer.evaluate()
+        print("MLM Evaluation Results:", pt_eval_results)
+        pt_perplexity = np.exp(pt_eval_results["eval_loss"])
+        print("Perplexity:", pt_perplexity)
+
+        rd_pt_eval_results = rd_pt_trainer.evaluate()
+        print("MLM Evaluation Results:", rd_pt_eval_results)
+        rd_pt_perplexity = np.exp(rd_pt_eval_results["eval_loss"])
+        print("Perplexity:", rd_pt_perplexity)
+
+
+# evaluating_pt_models()
+# check_mlm_models()
+
+def find_large_tensors(threshold=100 * 1024 ** 2):  # default threshold is 100 MB
+    large_tensors = []
+    for obj in gc.get_objects():
+        try:
+            if torch.is_tensor(obj) or (hasattr(obj, 'data') and torch.is_tensor(obj.data)):
+                size = obj.numel() * obj.element_size()  # bytes
+                if size >= threshold:
+                    large_tensors.append((type(obj), size, obj.size()))
+        except Exception as e:
+            pass  # ignore any non-tensor objects
+    return large_tensors
+
+for obj in gc.get_objects():
+    try:
+        if torch.is_tensor(obj) or (hasattr(obj, 'data') and torch.is_tensor(obj.data)):
+            # Checking if the tensor is part of a model or unnamed
+            tensor_name = getattr(obj, 'name', 'Unknown')
+            print(f"Tensor: {tensor_name}, Type: {type(obj)}, Size: {obj.size()}, Memory: {obj.element_size() * obj.nelement() / 1024**2:.2f} MB")
+    except:
+        pass
