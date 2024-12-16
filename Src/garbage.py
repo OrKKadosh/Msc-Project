@@ -1,311 +1,53 @@
-from datetime import datetime
-
-from sklearn.metrics import precision_score, recall_score, f1_score, accuracy_score, confusion_matrix, \
-    ConfusionMatrixDisplay, classification_report
-from wordcloud import WordCloud
-import matplotlib.pyplot as plt
-import json
-import os
-import re
-
-import numpy as np
-import pandas as pd
 import torch
-from datasets import load_dataset, concatenate_datasets, Dataset
-from transformers import AutoModelForSequenceClassification, AutoTokenizer, AutoModelForMaskedLM, \
-    DataCollatorWithPadding, Trainer, TrainingArguments
-import evaluate
-
-now = datetime.now()
-now = now.strftime("%Y-%m-%d %H:%M:%S")
+from transformers import AutoTokenizer, AutoModelForCausalLM
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
 
-NUM_DATASETS = 5
-NUM_TRAIN_EPOCH = 3
-
-def error_analysis(model_name, model_type,data, eval_dataset,eval_dataset_name):
-    save_directory = f'Data/Error_Analysis/FT/{now}/{model_name}/{model_type}'
-    os.makedirs(save_directory, exist_ok=True)
-
-    print(f"Starts Error_Analysis on {model_name} of type: {model_type} on {eval_dataset_name}")
-
-    eval_df = pd.DataFrame({
-        'text': eval_dataset['text'],
-        'true_label': eval_dataset['label'],
-        'predicted_label': data['predictions']
-    })
-    # os.makedirs(f'Data/Error_Analysis/FT/{model_name}/{model_type}', exist_ok=True)
-    misclassified_df = eval_df[eval_df['true_label'] != eval_df['predicted_label']]
-    # misclassified_df.to_csv(f'Data/Error_Analysis/FT/{now}/{model_name}/{model_type}/misclassified_{eval_dataset_name}.csv', index=False)
-    misclassified_df.to_csv(f'{save_directory}/misclassified_{eval_dataset_name}.csv', index=False)
-
-    # ___Confusion Matrix___
-    cm = confusion_matrix(eval_df['true_label'], eval_df['predicted_label'], labels=[0, 1, 2])
-    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=["negative", "neutral", "positive"])
-    disp.plot()
-    plt.title("Confusion Matrix")
-    plt.savefig(f"{save_directory}/confusion_matrix_{eval_dataset_name}.png")  # Save as an image
-    plt.show()  # Optionally display the plot
-
-    # ___Classification report___
-    report = classification_report(eval_df['true_label'], eval_df['predicted_label'],target_names=["negative", "neutral", "positive"])
-    print(report)  # Display report in console
-    with open(f"{save_directory}/classification_report_{eval_dataset_name}.txt","w") as file:
-        file.write(report)
-
-    # ___FP & FN___
-    false_positives = eval_df[(eval_df['true_label'] != 0) & (eval_df['predicted_label'] == 0)]  # Model predicts negative, but should be neutral/positive
-    false_positives.to_csv(f'{save_directory}/false_positives_{eval_dataset_name}.csv', index=False)
-
-    false_negatives = eval_df[(eval_df['true_label'] == 0) & (eval_df['predicted_label'] != 0)]  # Model fails to predict negative
-    false_negatives.to_csv(f'{save_directory}/false_negatives_{eval_dataset_name}.csv', index=False)
-
-    # ___Word cloud for misclassified texts___
-    misclassified_text = " ".join(misclassified_df['text'].values)
-    wordcloud = WordCloud(width=800, height=400).generate(misclassified_text)
-    plt.figure(figsize=(10, 5))
-    plt.imshow(wordcloud, interpolation='bilinear')
-    plt.axis("off")
-    # Save the plot as a file
-    plt.savefig(f'{save_directory}/misclassified_wordcloud_{eval_dataset_name}.png', format="png", dpi=300)
-    plt.show()
-
-    # ___Low confidence misclassification___
-    probs = np.max(data['logits'], axis=1)  # Get the max probability for each prediction
-    eval_df['confidence'] = probs
-    low_confidence_misclassifications = eval_df[(eval_df['true_label'] != eval_df['predicted_label']) & (eval_df['confidence'] < 0.6)]
-    low_confidence_misclassifications.to_csv(f'{save_directory}/low_confidence_misclassifications_{eval_dataset_name}.csv',index=False)
-
-    # ___Text Length___
-    length_save_directory = f'Data/Error_Analysis/FT/{now}/by_text_length/{model_name}/{model_type}'
-    os.makedirs(length_save_directory, exist_ok=True)
-    # Add a column for text lengths (in words)
-    eval_df['text_length'] = eval_df['text'].apply(lambda x: len(x.split()))
-    # Classify errors by text length categories
-    short_text_errors = eval_df[(eval_df['text_length'] <= 61) & (eval_df['true_label'] != eval_df['predicted_label'])]
-    median_text_errors = eval_df[(eval_df['text_length'] <= 68) & (eval_df['text_length'] > 61) & (
-                eval_df['true_label'] != eval_df['predicted_label'])]
-    long_text_errors = eval_df[(eval_df['text_length'] > 68) & (eval_df['true_label'] != eval_df['predicted_label'])]
-    # Save the errors in separate files
-    short_text_errors.to_csv(f'{length_save_directory}/short_length_errors_{eval_dataset_name}.csv', index=False)
-    median_text_errors.to_csv(f'{length_save_directory}/median_length_errors_{eval_dataset_name}.csv', index=False)
-    long_text_errors.to_csv(f'{length_save_directory}/long_length_errors_{eval_dataset_name}.csv', index=False)
-    # Calculate the total number of examples for each text length category
-    short_text_total = eval_df[eval_df['text_length'] <= 61]
-    median_text_total = eval_df[(eval_df['text_length'] <= 68) & (eval_df['text_length'] > 61)]
-    long_text_total = eval_df[eval_df['text_length'] > 68]
-    # Calculate error rates for each length category
-    short_error_rate = len(short_text_errors) / len(short_text_total) * 100 if len(short_text_total) > 0 else 0
-    median_error_rate = len(median_text_errors) / len(median_text_total) * 100 if len(median_text_total) > 0 else 0
-    long_error_rate = len(long_text_errors) / len(long_text_total) * 100 if len(long_text_total) > 0 else 0
-    # Define the path for saving the error rate summary
-    error_rate_summary_path = f'{length_save_directory}/error_rate_summary_{eval_dataset_name}.txt'
-    # Write the error rates to the text file
-    with open(error_rate_summary_path, 'w') as file:
-        file.write(f"Error Rate Summary for {eval_dataset_name}:\n")
-        file.write(f"Short text error rate: {short_error_rate:.2f}%\n")
-        file.write(f"Median text error rate: {median_error_rate:.2f}%\n")
-        file.write(f"Long text error rate: {long_error_rate:.2f}%\n")
-    print(f"Error rate summary saved to {error_rate_summary_path}")
+# Load the tokenizer and model
+model_name = "NousResearch/Nous-Hermes-2-Mixtral-8x7B-DPO"
+tokenizer = AutoTokenizer.from_pretrained(model_name)
+model = AutoModelForCausalLM.from_pretrained(
+    model_name,
+    device_map="auto",  # Automatically maps parts of the model to available devices
+    torch_dtype="auto"  # Uses the most appropriate dtype (e.g., float16 on GPUs)
+)
 
 
-def convert_labels_to_int(example):
-    # Convert the labels to integers
-    example['label'] = int(example['label'])
-    return example
-
-
-eval_consent_75_df = pd.read_csv('Data/test_datasets/split_eval_test/consent_75_eval.csv').apply(convert_labels_to_int, axis=1)
-eval_consent_75 = Dataset.from_pandas(eval_consent_75_df)
-
-eval_all_agree_df = pd.read_csv('Data/test_datasets/split_eval_test/all_agree_eval.csv').apply(convert_labels_to_int, axis=1)
-eval_all_agree = Dataset.from_pandas(eval_all_agree_df)
-
-
-predictions_dict = {
-    'distilroberta': [
-        {'type': 'base', 'preds': {'predictions': [], 'labels': [], 'logits': []}},
-        {'type': 'pt', 'preds': {'predictions': [], 'labels': [], 'logits': []}},
-        {'type': 'rd_pt', 'preds': {'predictions': [], 'labels': [], 'logits': []}}
-    ],
-    'distilbert': [
-        {'type': 'base', 'preds': {'predictions': [], 'labels': [], 'logits': []}},
-        {'type': 'pt', 'preds': {'predictions': [], 'labels': [], 'logits': []}},
-        {'type': 'rd_pt', 'preds': {'predictions': [], 'labels': [], 'logits': []}}
-    ],
-    'finbert': [
-        {'type': 'base', 'preds': {'predictions': [], 'labels': [], 'logits': []}},
-        {'type': 'pt', 'preds': {'predictions': [], 'labels': [], 'logits': []}},
-        {'type': 'rd_pt', 'preds': {'predictions': [], 'labels': [], 'logits': []}}
-    ],
-    'electra': [
-        {'type': 'base', 'preds': {'predictions': [], 'labels': [], 'logits': []}},
-        {'type': 'pt', 'preds': {'predictions': [], 'labels': [], 'logits': []}},
-        {'type': 'rd_pt', 'preds': {'predictions': [], 'labels': [], 'logits': []}}
-    ]
-}
-
-def tokenize_function(tokenizer, examples):
-    output = tokenizer(examples['text'], padding='max_length', truncation=True, max_length=512)
-    return output
-
-accuracy_metric = evaluate.load("./local_metrics/accuracy")
-precision_metric = evaluate.load("./local_metrics/precision")
-recall_metric = evaluate.load("./local_metrics/recall")
-f1_metric = evaluate.load("./local_metrics/f1")
-
-def compute_metrics_and_save_preds(eval_pred, model_name, model_type):
-    print(f"compute_metrics_and_save_preds has been called with {model_name} type: {model_type}" )
-    logits, labels = eval_pred
-    predictions = np.argmax(logits, axis=-1)
-    if model_name == 'finbert':
-        id2label = {0: 2, 1: 0, 2: 1}
-        predictions = [id2label[pred] for pred in predictions]
-
-    # # Determine the main model name and access the correct dictionary based on model_type
-    # if 'distilroberta' in model_name.lower():
-    #     model_key = 'distilRoberta'
-    # elif 'distilbert' in model_name.lower():
-    #     model_key = 'distilBert'
-    # elif 'finbert' in model_name.lower():
-    #     model_key = 'finBert'
-    # elif 'electra' in model_name.lower():
-    #     model_key = 'Electra'
-    # else:
-    #     raise ValueError("Model name does not match any expected keys")
-
-    # Locate the right nested dictionary by model type and store predictions, labels, and logits
-    for model in predictions_dict[model_name]:
-        if model['type'] == model_type:
-            model['preds']['predictions'] = predictions
-            model['preds']['labels'] = labels
-            model['preds']['logits'] = logits
-            break
-
-    # needed while using the FINBERT & base_stock-news-distilbert, since its labels are not matching
-    if model_name == 'finbert':
-        id2label = {0: 2, 1: 0, 2: 1}
-        mapped_predictions = [id2label[pred] for pred in predictions]
-    elif model_name == 'distilbert':
-        id2label = {0: 1, 1: 0, 2: 2}
-        mapped_predictions = [id2label[pred] for pred in predictions]
-    else:
-        mapped_predictions = predictions
-
-
-    # Compute accuracy, precision, recall, and f1 using either mapped or original predictions
-    accuracy = accuracy_metric.compute(predictions=mapped_predictions, references=labels)
-    precision = precision_metric.compute(predictions=mapped_predictions, references=labels, average='macro')
-    recall = recall_metric.compute(predictions=mapped_predictions, references=labels, average='macro')
-    f1 = f1_metric.compute(predictions=mapped_predictions, references=labels, average='macro')
-
-    return {
-      'accuracy': accuracy['accuracy'],
-      'precision': precision['precision'],
-      'recall': recall['recall'],
-      'f1': f1['f1']
-    }
-
-# returns the shortcut name
-def get_model_name(model_name):
-    if 'distilroberta' in model_name.lower():
-        model_key = 'distilRoberta'
-    elif 'distilbert' in model_name.lower():
-        model_key = 'distilBert'
-    elif 'finbert' in model_name.lower():
-        model_key = 'finBert'
-    elif 'electra' in model_name.lower():
-        model_key = 'Electra'
-    else:
-        raise ValueError("Model name does not match any expected keys")
-    return model_key
-
-models_names = ['distilroberta', 'distilbert', 'finbert']
-models_types = ['base', 'pt', 'rd_pt']
-eval_datasets = [{'dataset': eval_all_agree, 'name': 'eval_all_agree'}, {'dataset': eval_consent_75, 'name': 'eval_consent_75'}]
-
-
-def perform_error_analysis_all_agree(eval_dataset):
-
-    # Set up evaluation arguments
-    evaluation_args = TrainingArguments(
-        output_dir="./eval_checkpoints",
-        per_device_eval_batch_size=2,
-        logging_dir='./logs',
-        do_eval=True,
-        save_strategy="epoch",
+def generate_synthetic_sample(prompt, max_length=200, num_return_sequences=1, temperature=0.7):
+    # Tokenize the input with padding and truncation
+    inputs = tokenizer(
+        prompt,
+        return_tensors="pt",
+        padding=True,
+        truncation=True,
+        max_length=max_length  # Explicitly enforce max length during tokenization
+    ).to(model.device)
+    # Generate outputs with the pad token explicitly set
+    outputs = model.generate(
+        inputs.input_ids,
+        attention_mask=inputs.attention_mask,  # Provide the attention mask
+        max_length=max_length,
+        num_return_sequences=num_return_sequences,
+        temperature=temperature,  # Controls creativity
+        top_k=50,  # Limits the sampling pool for more coherent text
+        top_p=0.9,  # Nucleus sampling
+        do_sample=True,  # Enables sampling
+        pad_token_id=tokenizer.pad_token_id,  # Ensure the model handles padding properly
     )
-
-    eval_results = []  # To store each evaluation result, including dataset, dataset name, and predictions
-    # __________________________
-    for model_name in models_names:
-        for model_type in models_types:
-
-            # Load the Fine-Tuned model for evaluation
-            save_directory = f'./Saved_models/fine-tuned/{model_name}_{model_type}'
-            model = AutoModelForSequenceClassification.from_pretrained(save_directory)
-            tokenizer = AutoTokenizer.from_pretrained(save_directory)
-            data_collator = DataCollatorWithPadding(tokenizer=tokenizer, return_tensors='pt')
-
-            print(f"Starts evaluating the FT model: {model_name} of type: {model_type} on dataset: {eval_dataset['name']}")
-
-            tokenized_eval_dataset = eval_dataset['dataset'].map(lambda x: tokenize_function(tokenizer, x),batched=True)
-
-            # Initialize the Trainer for the evaluation phase
-            trainer = Trainer(
-                model=model,
-                args=evaluation_args,
-                eval_dataset=tokenized_eval_dataset,
-                tokenizer=tokenizer,
-                data_collator=data_collator,
-                compute_metrics=lambda eval_pred: compute_metrics_and_save_preds(eval_pred, model_name, model_type),
-            )
-
-            evaluation_results = trainer.evaluate()
-
-            results_with_model = {
-                "Type": model_type,
-                "model_name": model_name,
-                "results": evaluation_results,
-                "eval_args": evaluation_args.to_dict(),
-            }
-
-            results_file_name = f"{eval_dataset['name']}.txt"
-            results_dir = f"./Evaluation_results/FT_{eval_dataset['name']}/{model_name}/{model_type}/"
-            os.makedirs(results_dir, exist_ok=True)
-            results_file_path = os.path.join(results_dir, results_file_name)
-
-            with open(results_file_path, "w") as file:
-                file.write(json.dumps(results_with_model, indent=4))
-
-            print(f"Evaluation results for the FT model: {model_name} of type: {model_type} saved to {results_file_name}")
-
-            # Save evaluation results and data for error analysis
-            eval_results.append({
-                'model_name': model_name,
-                'model_type': model_type,
-                'eval_dataset': eval_dataset['dataset'],
-                'eval_dataset_name': eval_dataset['name'],
-                'evaluation_results': evaluation_results
-            })
-
-    # Run error analysis on the collected results
-    for result in eval_results:
-        model_name = result['model_name']
-        model_type = result['model_type']
-        eval_dataset = result['eval_dataset']
-        eval_dataset_name = result['eval_dataset_name']
-
-        # Access the correct prediction data
-        for type_data in predictions_dict[model_name]:
-            if type_data['type'] == model_type:
-                data = type_data['preds']
-                error_analysis(model_name, model_type, data, eval_dataset, eval_dataset_name)
-                break
+    return [tokenizer.decode(output, skip_special_tokens=True) for output in outputs]
 
 
-for eval_dataset in eval_datasets:
-    perform_error_analysis_all_agree(eval_dataset)
+# Example prompt
+prompt = """Please generate a financial text with a neutral sentiment, here are some examples
+1. According to Gran , the company has no plans to move all production to Russia , although that is where the company is growing .
+2. In Sweden , Gallerix accumulated SEK denominated sales were down 1 % and EUR denominated sales were up 11 % .
+3. When this investment is in place , Atria plans to expand into the Moscow market .
+4. In June it sold a 30 percent stake to Nordstjernan , and the investment group has now taken up the option to acquire EQT 's remaining shares .
+5. The new plant is planned to have an electricity generation capacity of up to 350 megawatts ( MW ) and the same heat generation capacity .
+"""
+synthetic_samples = generate_synthetic_sample(prompt, max_length=200, num_return_sequences=3)
 
+# Print generated samples
+for idx, sample in enumerate(synthetic_samples, 1):
+    print(f"Sample {idx}: {sample}")

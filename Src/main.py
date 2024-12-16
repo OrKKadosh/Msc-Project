@@ -1035,3 +1035,149 @@ def train_test_all_models(NUM_TRAIN_EPOCH):
 #             pre_train(model, pre_train_dataset)
 #     train_test_all_models(NUM_TRAIN_EPOCH)
 
+def evaluating_pt_models_24_11():
+    # Initialize the secondary model and tokenizer only ONCE
+    secondary_model_name = 'ProsusAI/finbert'
+    secondary_model = AutoModelForSequenceClassification.from_pretrained(
+        secondary_model_name,
+        num_labels=2,  # For Neutral vs Positive
+        ignore_mismatched_sizes=True
+    ).to(device)
+    secondary_tokenizer = AutoTokenizer.from_pretrained(secondary_model_name)
+
+    def refine_prediction(primary_prediction, input_text):
+        """
+        Refines predictions using the secondary classifier for Neutral vs Positive.
+        """
+        if primary_prediction == 2:  # Positive prediction
+            inputs = secondary_tokenizer(input_text, return_tensors="pt", truncation=True, padding="max_length").to(device)
+            secondary_logits = secondary_model(**inputs).logits
+            refined_prediction = torch.argmax(secondary_logits, dim=-1).item()
+
+            # Log intermediate results
+            print(f"Secondary logits: {secondary_logits}, Refined Prediction: {refined_prediction}")
+
+            # Map back to the original label space
+            return 1 if refined_prediction == 0 else 2  # Neutral -> 1, Positive -> 2
+        return primary_prediction
+
+    for model in base_models:
+        model_name = model['name']
+        pt_directory = f"./Saved_models/pre_trained_with_old_pt_{model_name}/Pre-Trained_{model_name}/"
+        rd_pt_directory = f"./Saved_models/pre_trained/Pre-Trained+RD_{model_name}/"
+
+        # Load base tokenizer
+        base_tokenizer = AutoTokenizer.from_pretrained(model["tokenizer"])
+
+        # Load pre-trained models with sequence classification head
+        pt_model = AutoModelForSequenceClassification.from_pretrained(pt_directory, num_labels=3).to(device)
+        rd_pt_model = AutoModelForSequenceClassification.from_pretrained(rd_pt_directory, num_labels=3).to(device)
+
+        # Tokenizers for the pre-trained models
+        pt_tokenizer = AutoTokenizer.from_pretrained(pt_directory)
+        rd_pt_tokenizer = AutoTokenizer.from_pretrained(rd_pt_directory)
+
+        # Data collators for padding
+        base_collator = DataCollatorWithPadding(tokenizer=base_tokenizer, return_tensors='pt')
+        pt_data_collator = DataCollatorWithPadding(tokenizer=pt_tokenizer, return_tensors='pt')
+        rd_pt_data_collator = DataCollatorWithPadding(tokenizer=rd_pt_tokenizer, return_tensors='pt')
+
+        # Model dictionaries for base, pre-trained, and RD pre-trained models
+        base_model = {
+            'name': model_name,
+            'type': 'base',
+            'model': model['model'],
+            'tokenizer': base_tokenizer,
+            'data_collator': base_collator
+        }
+        pre_train_model = {
+            "name": model_name,
+            "type": "pt",
+            "model": pt_model,
+            "tokenizer": pt_tokenizer,
+            "data_collator": pt_data_collator,
+        }
+        rd_pre_train_model = {
+            "name": model_name,
+            "type": "rd_pt",
+            "model": rd_pt_model,
+            "tokenizer": rd_pt_tokenizer,
+            "data_collator": rd_pt_data_collator,
+        }
+        # Choose models for evaluation
+        base_and_pt_models = [base_model, pt_model, rd_pt_model]
+
+        # Set up evaluation arguments
+        evaluation_args = TrainingArguments(
+            output_dir="./eval_checkpoints",
+            per_device_eval_batch_size=8,
+            logging_dir='./logs',
+            do_eval=True,
+            save_strategy="epoch",
+        )
+
+        for inner_model in base_and_pt_models:
+            for eval_dataset in eval_dataset_dict:
+                tokenized_eval_dataset = eval_dataset['dataset'].map(lambda x: tokenize_function(inner_model["tokenizer"], x), batched=True)
+
+                model_type = inner_model['type']
+                print(f"Starts evaluating {model_name} of type: {model_type}")
+
+                # Initialize Trainer for evaluation
+                trainer = Trainer(
+                    model=inner_model['model'],
+                    args=evaluation_args,
+                    eval_dataset=tokenized_eval_dataset,
+                    tokenizer=inner_model['tokenizer'],
+                    data_collator=inner_model['data_collator'],
+                )
+
+                # Run evaluation to get raw predictions
+                predictions, labels, _ = trainer.predict(tokenized_eval_dataset)
+                predictions = np.argmax(predictions, axis=1)
+
+                # Refine predictions where necessary
+                refined_predictions = []
+                for i, example in enumerate(eval_dataset['dataset']):
+                    input_text = example['text']
+                    primary_prediction = predictions[i]
+
+                    # Refine only if necessary
+                    refined_prediction = refine_prediction(primary_prediction, input_text)
+                    refined_predictions.append(refined_prediction)
+
+                # Convert predictions and labels to Python int for JSON serialization
+                refined_predictions = [int(pred) for pred in refined_predictions]
+                labels = [int(label) for label in labels]
+
+                # Calculate metrics for refined predictions
+                metrics = {
+                    "accuracy": accuracy_metric.compute(predictions=refined_predictions, references=labels)["accuracy"],
+                    "precision": precision_metric.compute(predictions=refined_predictions, references=labels, average='macro')["precision"],
+                    "recall": recall_metric.compute(predictions=refined_predictions, references=labels, average='macro')["recall"],
+                    "f1": f1_metric.compute(predictions=refined_predictions, references=labels, average='macro')["f1"],
+                }
+
+                # Log calculated metrics
+                print(f"Metrics: {metrics}")
+
+                # Save metrics and detailed results to a JSON file
+                evaluation_results = [
+                    {
+                        "text": example["text"],
+                        "true_label": labels[i],
+                        "primary_prediction": int(predictions[i]),
+                        "refined_prediction": refined_predictions[i],
+                    }
+                    for i, example in enumerate(eval_dataset['dataset'])
+                ]
+
+                results_file_name = f"{eval_dataset['name']}_refined_results.json"
+                results_dir = f"./Evaluation_results/eval_{now}/{model_name}/{model_type}/"
+                os.makedirs(results_dir, exist_ok=True)
+                results_file_path = os.path.join(results_dir, results_file_name)
+
+                with open(results_file_path, "w") as file:
+                    json.dump({"metrics": metrics, "details": evaluation_results}, file, indent=4)
+
+                print(f"Refined Evaluation results for {model_name} of type: {model_type} saved to {results_dir}")
