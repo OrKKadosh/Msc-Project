@@ -79,7 +79,7 @@ base_model4 = {
     "name": "electra"
 }#FLANG-ELECTRA
 base_models = [base_model0, base_model1, base_model2, base_model4]
-# base_models = [base_model2]
+# base_models = [base_model0, base_model1, base_model2]
 NUM_DATASETS = 5
 NUM_TRAIN_EPOCH = 3
 
@@ -112,16 +112,16 @@ def compute_metrics(eval_pred, model_name):
   predictions = np.argmax(logits, axis=-1)
 
   # needed while using the FINBERT & base_stock-news-distilbert, since its labels are not matching
-  if 'finbert' in model_name:
-      id2label = {0: 2, 1: 0, 2: 1}
-      mapped_predictions = [id2label[pred] for pred in predictions]
-  elif 'distilbert' in model_name:
-      id2label = {0: 1, 1: 0, 2: 2}
-      mapped_predictions = [id2label[pred] for pred in predictions]
-  else:
-      mapped_predictions = predictions
+  # if 'finbert' in model_name:
+  #     id2label = {0: 2, 1: 0, 2: 1}
+  #     mapped_predictions = [id2label[pred] for pred in predictions]
+  # elif 'distilbert' in model_name:
+  #     id2label = {0: 1, 1: 0, 2: 2}
+  #     mapped_predictions = [id2label[pred] for pred in predictions]
+  # else:
+  #     mapped_predictions = predictions
 
-
+  mapped_predictions = predictions
   # Compute accuracy, precision, recall, and f1 using either mapped or original predictions
   accuracy = accuracy_metric.compute(predictions=mapped_predictions, references=labels)
   precision = precision_metric.compute(predictions=mapped_predictions, references=labels, average='macro')
@@ -161,7 +161,7 @@ def clean_dataset(dataset, idx):
     return cleaned_dataset
 
 
-def encode_labels(example, ds, model_name=None):
+def encode_labels_depends_on_model(example, ds, model_name=None):
     """
     Encode labels as integers. Adjust label mapping for FinBERT where:
     "0": "positive", "1": "negative", "2": "neutral"
@@ -228,40 +228,47 @@ def get_dataset(idx):
         df = pd.read_csv('Data/Processed_Financial_News.csv')
         dataset = Dataset.from_pandas(df)
     elif idx == 4:  # FinGPT/fingpt-sentiment-train
-        df = pd.read_csv("/cs_storage/orkados/Data/FinGPT_cleaned_dataset.csv")
+        df = pd.read_csv("Data/FinGPT_cleaned_dataset.csv")
         df.rename(columns={'input': 'text', 'output': 'label'}, inplace=True)
         dataset = Dataset.from_pandas(df)
 
-    # BACK-TRANSLATED DATASETS
-    elif idx == 5:  # Back-Translated fiqa-sentiment-classification
-        df = pd.read_csv('Data/back_translated/translated_dataset_0.csv')
+    elif idx == 5:  # aug_negative_dataset.csv
+        df = pd.read_csv("Data/aug_negative_dataset.csv")
         dataset = Dataset.from_pandas(df)
-    elif idx == 6:  # Back-Translated financial_phrasebank_75_agree
-        df = pd.read_csv('Data/back_translated/translated_dataset_1.csv')
+    else:  # aug_neutral_dataset.csv
+        df = pd.read_csv("Data/aug_neutral_dataset.csv")
         dataset = Dataset.from_pandas(df)
-        dataset = dataset.map(lambda example: clean_text(example, idx))
-    elif idx == 7:  # Back-Translated Stock-Market Sentiment Dataset
-        df = pd.read_csv('Data/back_translated/translated_dataset_2.csv')
-        dataset = Dataset.from_pandas(df)
-        dataset = dataset.map(lambda example: clean_text(example, idx))
-    elif idx == 8:  # Back-Translated Aspect based Sentiment Analysis for Financial News
-        df = pd.read_csv('Data/back_translated/translated_dataset_3.csv')
-        dataset = Dataset.from_pandas(df)
-        dataset = dataset.map(lambda example: clean_text(example, idx))
 
-    # NEGATION EDITED DATASETS
-    elif idx == 9:  # negation_fiqa-sentiment-classification
-        df = pd.read_csv('Data/negation_dataset_0.csv')
-        dataset = Dataset.from_pandas(df)
-    elif idx == 10:  # negation_financial_phrasebank_75_agree
-        df = pd.read_csv('Data/negation_dataset_1.csv')
-        dataset = Dataset.from_pandas(df)
-    elif idx == 11:  # negation_Stock-Market Sentiment Dataset
-        df = pd.read_csv('Data/negation_dataset_2.csv')
-        dataset = Dataset.from_pandas(df)
-    else:  # idx == 12: negation_Aspect based Sentiment Analysis for Financial News
-        df = pd.read_csv('Data/negation_dataset_3.csv')
-        dataset = Dataset.from_pandas(df)
+    # # BACK-TRANSLATED DATASETS
+    # elif idx == 5:  # Back-Translated fiqa-sentiment-classification
+    #     df = pd.read_csv('Data/back_translated/translated_dataset_0.csv')
+    #     dataset = Dataset.from_pandas(df)
+    # elif idx == 6:  # Back-Translated financial_phrasebank_75_agree
+    #     df = pd.read_csv('Data/back_translated/translated_dataset_1.csv')
+    #     dataset = Dataset.from_pandas(df)
+    #     dataset = dataset.map(lambda example: clean_text(example, idx))
+    # elif idx == 7:  # Back-Translated Stock-Market Sentiment Dataset
+    #     df = pd.read_csv('Data/back_translated/translated_dataset_2.csv')
+    #     dataset = Dataset.from_pandas(df)
+    #     dataset = dataset.map(lambda example: clean_text(example, idx))
+    # elif idx == 8:  # Back-Translated Aspect based Sentiment Analysis for Financial News
+    #     df = pd.read_csv('Data/back_translated/translated_dataset_3.csv')
+    #     dataset = Dataset.from_pandas(df)
+    #     dataset = dataset.map(lambda example: clean_text(example, idx))
+    #
+    # # NEGATION EDITED DATASETS
+    # elif idx == 9:  # negation_fiqa-sentiment-classification
+    #     df = pd.read_csv('Data/negation_dataset_0.csv')
+    #     dataset = Dataset.from_pandas(df)
+    # elif idx == 10:  # negation_financial_phrasebank_75_agree
+    #     df = pd.read_csv('Data/negation_dataset_1.csv')
+    #     dataset = Dataset.from_pandas(df)
+    # elif idx == 11:  # negation_Stock-Market Sentiment Dataset
+    #     df = pd.read_csv('Data/negation_dataset_2.csv')
+    #     dataset = Dataset.from_pandas(df)
+    # else:  # idx == 12: negation_Aspect based Sentiment Analysis for Financial News
+    #     df = pd.read_csv('Data/negation_dataset_3.csv')
+    #     dataset = Dataset.from_pandas(df)
 
     return dataset
 
@@ -273,12 +280,10 @@ def evaluating():
 
         model_name = model['name']
 
-        base_directory = f"./Saved_models/fine-tuned/{model_name}_base"
+        base_directory = f"./Saved_models/ft&eval/{model_name}/base"
 
-        pt_directory = f"./Saved_models/fine-tuned/{model_name}_pt"
-        # pt_directory = './Saved_models/pre_trained_with_old_pt_distilroberta/Pre-Trained_distilroberta-finetuned-financial-news-sentiment-analysis/'
-        # pt_directory = f'./Saved_models/pre_trained_with_old_pt/Pre-Trained_{model_name}'
-        rd_pt_directory = f"./Saved_models/fine-tuned/{model_name}_rd_pt"
+        pt_directory = f"./Saved_models/ft&eval/{model_name}/pt"
+        rd_pt_directory = f"./Saved_models/ft&eval/{model_name}/rd_pt"
 
         base_tokenizer = AutoTokenizer.from_pretrained(model["tokenizer"])
 
@@ -321,8 +326,8 @@ def evaluating():
             "tokenizer": rd_pt_tokenizer,
             "data_collator": rd_pt_data_collator,
         }
-        # base_and_pt_models = [base_model, pre_train_model, rd_pre_train_model]
-        base_and_pt_models = [base_model]
+        base_and_pt_models = [base_model, pre_train_model, rd_pre_train_model]
+        # base_and_pt_models = [base_model]
 
 
 
@@ -373,6 +378,1082 @@ def evaluating():
                     file.write(json.dumps(results_with_model, indent=4))
 
                 print(f"Evaluation results for the model: {model_name} of type: {model_type} saved to {results_dir}")
+
+def evaluating_check_0101():
+
+    for model in base_models:
+
+        model_name = model['name']
+
+        base_directory = f"./Saved_models/ft&eval/{model_name}/base"
+
+        # pt_directory = f"./Saved_models/ft&eval/{model_name}/pt"
+        # rd_pt_directory = f"./Saved_models/ft&eval/{model_name}/rd_pt"
+
+        base_tokenizer = AutoTokenizer.from_pretrained(model["tokenizer"])
+
+        base = AutoModelForSequenceClassification.from_pretrained(base_directory, num_labels=3).to(device)
+
+        # pt_model = AutoModelForSequenceClassification.from_pretrained(pt_directory, num_labels=3).to(device)
+        # pt_tokenizer = AutoTokenizer.from_pretrained(pt_directory)
+
+
+        # rd_pt_model = AutoModelForSequenceClassification.from_pretrained(rd_pt_directory, num_labels=3).to(device)
+        # rd_pt_tokenizer = AutoTokenizer.from_pretrained(rd_pt_directory)
+
+        base_collator = DataCollatorWithPadding(tokenizer=base_tokenizer, return_tensors='pt')
+        # pt_data_collator = DataCollatorWithPadding(tokenizer=pt_tokenizer, return_tensors='pt')
+        # rd_pt_data_collator = DataCollatorWithPadding(tokenizer=rd_pt_tokenizer, return_tensors='pt')
+
+        # Create model dictionaries for base, pre-trained, and RD pre-trained models
+        base_model = {
+            'name': model_name,
+            'type': 'base',
+            'model': base,
+            'tokenizer': base_tokenizer,
+            'data_collator': base_collator
+        }
+        # pre_train_model = {
+        #     "name": model_name,
+        #     "type": "pt",
+        #     "model": pt_model,
+        #     "tokenizer": pt_tokenizer,
+        #     "data_collator": pt_data_collator,
+        # }
+        # rd_pre_train_model = {
+        #     "name": model_name,
+        #     "type": "rd_pt",
+        #     "model": rd_pt_model,
+        #     "tokenizer": rd_pt_tokenizer,
+        #     "data_collator": rd_pt_data_collator,
+        # }
+        base_and_pt_models = [base_model]
+        # base_and_pt_models = [base_model]
+
+
+
+        evaluation_args = TrainingArguments(
+            output_dir="./eval_checkpoints",
+            per_device_eval_batch_size=8,
+            logging_dir='./logs',
+            do_eval=True,
+            save_strategy="epoch",
+        )
+
+        for inner_model in base_and_pt_models:  # Iterate over models (base, pre-trained, RD pre-trained)
+            for eval_dataset in eval_dataset_dict:
+                tokenized_eval_dataset = eval_dataset['dataset'].map(lambda x: tokenize_function(inner_model["tokenizer"], x),batched=True)  # Tokenize eval
+
+                model_type = inner_model['type']
+
+                print(f"Starts evaluating {model_name} of type: {model_type}")
+
+
+                # Initialize the Trainer for the evaluation phase
+                trainer = Trainer(
+                    model=inner_model['model'],
+                    args=evaluation_args,
+                    eval_dataset=tokenized_eval_dataset,
+                    tokenizer=inner_model['tokenizer'],
+                    data_collator=inner_model['data_collator'],
+                    compute_metrics=lambda eval_pred : compute_metrics(eval_pred, model_name),
+                )
+
+                evaluation_results = trainer.evaluate()
+
+                results_with_model = {
+                    "Type": inner_model['type'],
+                    "model_name": inner_model['name'],
+                    "results": evaluation_results,
+                    "eval_dataset": eval_dataset['name'],
+                    "evaluation_args": evaluation_args.to_dict()
+                }
+
+
+                results_file_name = f"{eval_dataset['name']}.txt"
+                results_dir = f"./Evaluation_results/eval_{now}/{model_name}/{model_type}/"
+                os.makedirs(results_dir, exist_ok=True)
+                results_file_path = os.path.join(results_dir, results_file_name)
+
+                with open(results_file_path, "w") as file:
+                    file.write(json.dumps(results_with_model, indent=4))
+
+                print(f"Evaluation results for the model: {model_name} of type: {model_type} saved to {results_dir}")
+
+def evaluating_balanced_labels_distribution():
+
+    for model in base_models:
+
+        model_name = model['name']
+
+        base_directory = f"./Saved_models/ft_with_balanced_labels_dist_2025-01-05_15-14-50/{model_name}/base/"
+
+        pt_directory = f"./Saved_models/ft_with_balanced_labels_dist_2025-01-05_15-14-50/{model_name}/pt/"
+        # pt_directory = './Saved_models/pre_trained_with_old_pt_distilroberta/Pre-Trained_distilroberta-finetuned-financial-news-sentiment-analysis/'
+        # pt_directory = f'./Saved_models/pre_trained_with_old_pt/Pre-Trained_{model_name}'
+        rd_pt_directory = f"./Saved_models/ft_with_balanced_labels_dist_2025-01-05_15-14-50/{model_name}/rd_pt/"
+
+        base_tokenizer = AutoTokenizer.from_pretrained(model["tokenizer"])
+
+        base = AutoModelForSequenceClassification.from_pretrained(base_directory, num_labels=3).to(device)
+
+        pt_model = AutoModelForSequenceClassification.from_pretrained(pt_directory, num_labels=3).to(device)
+        pt_tokenizer = AutoTokenizer.from_pretrained(pt_directory)
+
+        # electra_base_model = AutoModelForSequenceClassification.from_pretrained(base_directory, num_labels=3).to(device)
+        # electra_base_tokenizer = AutoTokenizer.from_pretrained(base_directory)
+        # electra_base_collator = DataCollatorWithPadding(tokenizer=electra_base_tokenizer, return_tensors='pt')
+
+
+        rd_pt_model = AutoModelForSequenceClassification.from_pretrained(rd_pt_directory, num_labels=3).to(device)
+        rd_pt_tokenizer = AutoTokenizer.from_pretrained(rd_pt_directory)
+
+        base_collator = DataCollatorWithPadding(tokenizer=base_tokenizer, return_tensors='pt')
+        pt_data_collator = DataCollatorWithPadding(tokenizer=pt_tokenizer, return_tensors='pt')
+        rd_pt_data_collator = DataCollatorWithPadding(tokenizer=rd_pt_tokenizer, return_tensors='pt')
+
+        # Create model dictionaries for base, pre-trained, and RD pre-trained models
+        base_model = {
+            'name': model_name,
+            'type': 'base',
+            'model': base,
+            'tokenizer': base_tokenizer,
+            'data_collator': base_collator
+        }
+        pre_train_model = {
+            "name": model_name,
+            "type": "pt",
+            "model": pt_model,
+            "tokenizer": pt_tokenizer,
+            "data_collator": pt_data_collator,
+        }
+        rd_pre_train_model = {
+            "name": model_name,
+            "type": "rd_pt",
+            "model": rd_pt_model,
+            "tokenizer": rd_pt_tokenizer,
+            "data_collator": rd_pt_data_collator,
+        }
+        base_and_pt_models = [base_model, pre_train_model, rd_pre_train_model]
+        # base_and_pt_models = [base_model]
+
+
+
+        evaluation_args = TrainingArguments(
+            output_dir="./eval_checkpoints",
+            per_device_eval_batch_size=8,
+            logging_dir='./logs',
+            do_eval=True,
+            save_strategy="epoch",
+        )
+
+        for inner_model in base_and_pt_models:  # Iterate over models (base, pre-trained, RD pre-trained)
+            for eval_dataset in eval_dataset_dict:
+                tokenized_eval_dataset = eval_dataset['dataset'].map(lambda x: tokenize_function(inner_model["tokenizer"], x),batched=True)  # Tokenize eval
+
+                model_type = inner_model['type']
+
+                print(f"Starts evaluating {model_name} of type: {model_type}")
+
+
+                # Initialize the Trainer for the evaluation phase
+                trainer = Trainer(
+                    model=inner_model['model'],
+                    args=evaluation_args,
+                    eval_dataset=tokenized_eval_dataset,
+                    tokenizer=inner_model['tokenizer'],
+                    data_collator=inner_model['data_collator'],
+                    compute_metrics=lambda eval_pred : compute_metrics(eval_pred, model_name),
+                )
+
+                evaluation_results = trainer.evaluate()
+
+                results_with_model = {
+                    "Type": inner_model['type'],
+                    "model_name": inner_model['name'],
+                    "results": evaluation_results,
+                    "eval_dataset": eval_dataset['name'],
+                    "evaluation_args": evaluation_args.to_dict()
+                }
+
+
+                results_file_name = f"{eval_dataset['name']}.txt"
+                results_dir = f"./Evaluation_results/eval_balanced_labels_distribution_{now}/{model_name}/{model_type}/"
+                os.makedirs(results_dir, exist_ok=True)
+                results_file_path = os.path.join(results_dir, results_file_name)
+
+                with open(results_file_path, "w") as file:
+                    file.write(json.dumps(results_with_model, indent=4))
+
+                print(f"Evaluation results for the model: {model_name} of type: {model_type} saved to {results_dir}")
+def evaluating_synth_dividend():
+
+    for model in base_models:
+
+        model_name = model['name']
+
+        base_directory = f"./Saved_models/ft&eval_neu_neg_synth_dividend_2025-01-05_17-25-43/{model_name}/base"
+
+        pt_directory = f"./Saved_models/ft&eval_neu_neg_synth_dividend_2025-01-05_17-25-43/{model_name}/pt"
+        # pt_directory = './Saved_models/pre_trained_with_old_pt_distilroberta/Pre-Trained_distilroberta-finetuned-financial-news-sentiment-analysis/'
+        # pt_directory = f'./Saved_models/pre_trained_with_old_pt/Pre-Trained_{model_name}'
+        rd_pt_directory = f"./Saved_models/ft&eval_neu_neg_synth_dividend_2025-01-05_17-25-43/{model_name}/rd_pt"
+
+        base_tokenizer = AutoTokenizer.from_pretrained(model["tokenizer"])
+
+        base = AutoModelForSequenceClassification.from_pretrained(base_directory, num_labels=3).to(device)
+
+        pt_model = AutoModelForSequenceClassification.from_pretrained(pt_directory, num_labels=3).to(device)
+        pt_tokenizer = AutoTokenizer.from_pretrained(pt_directory)
+
+        # electra_base_model = AutoModelForSequenceClassification.from_pretrained(base_directory, num_labels=3).to(device)
+        # electra_base_tokenizer = AutoTokenizer.from_pretrained(base_directory)
+        # electra_base_collator = DataCollatorWithPadding(tokenizer=electra_base_tokenizer, return_tensors='pt')
+
+
+        rd_pt_model = AutoModelForSequenceClassification.from_pretrained(rd_pt_directory, num_labels=3).to(device)
+        rd_pt_tokenizer = AutoTokenizer.from_pretrained(rd_pt_directory)
+
+        base_collator = DataCollatorWithPadding(tokenizer=base_tokenizer, return_tensors='pt')
+        pt_data_collator = DataCollatorWithPadding(tokenizer=pt_tokenizer, return_tensors='pt')
+        rd_pt_data_collator = DataCollatorWithPadding(tokenizer=rd_pt_tokenizer, return_tensors='pt')
+
+        # Create model dictionaries for base, pre-trained, and RD pre-trained models
+        base_model = {
+            'name': model_name,
+            'type': 'base',
+            'model': base,
+            'tokenizer': base_tokenizer,
+            'data_collator': base_collator
+        }
+        pre_train_model = {
+            "name": model_name,
+            "type": "pt",
+            "model": pt_model,
+            "tokenizer": pt_tokenizer,
+            "data_collator": pt_data_collator,
+        }
+        rd_pre_train_model = {
+            "name": model_name,
+            "type": "rd_pt",
+            "model": rd_pt_model,
+            "tokenizer": rd_pt_tokenizer,
+            "data_collator": rd_pt_data_collator,
+        }
+        base_and_pt_models = [base_model, pre_train_model, rd_pre_train_model]
+        # base_and_pt_models = [base_model]
+
+
+
+        evaluation_args = TrainingArguments(
+            output_dir="./eval_checkpoints",
+            per_device_eval_batch_size=8,
+            logging_dir='./logs',
+            do_eval=True,
+            save_strategy="epoch",
+        )
+
+        for inner_model in base_and_pt_models:  # Iterate over models (base, pre-trained, RD pre-trained)
+            for eval_dataset in eval_dataset_dict:
+                tokenized_eval_dataset = eval_dataset['dataset'].map(lambda x: tokenize_function(inner_model["tokenizer"], x),batched=True)  # Tokenize eval
+
+                model_type = inner_model['type']
+
+                print(f"Starts evaluating {model_name} of type: {model_type}")
+
+
+                # Initialize the Trainer for the evaluation phase
+                trainer = Trainer(
+                    model=inner_model['model'],
+                    args=evaluation_args,
+                    eval_dataset=tokenized_eval_dataset,
+                    tokenizer=inner_model['tokenizer'],
+                    data_collator=inner_model['data_collator'],
+                    compute_metrics=lambda eval_pred : compute_metrics(eval_pred, model_name),
+                )
+
+                evaluation_results = trainer.evaluate()
+
+                results_with_model = {
+                    "Type": inner_model['type'],
+                    "model_name": inner_model['name'],
+                    "results": evaluation_results,
+                    "eval_dataset": eval_dataset['name'],
+                    "evaluation_args": evaluation_args.to_dict()
+                }
+
+
+                results_file_name = f"{eval_dataset['name']}.txt"
+                results_dir = f"./Evaluation_results/eval_neu_neg_synth_dividend_{now}/{model_name}/{model_type}/"
+                os.makedirs(results_dir, exist_ok=True)
+                results_file_path = os.path.join(results_dir, results_file_name)
+
+                with open(results_file_path, "w") as file:
+                    file.write(json.dumps(results_with_model, indent=4))
+
+                print(f"Evaluation results for the model: {model_name} of type: {model_type} saved to {results_dir}")
+
+def evaluating_synth_dividend_detailed_results_check():
+    for model in base_models:
+        model_name = model['name']
+
+        # Model directories
+        base_directory = f"./Saved_models/ft&eval_neu_neg_synth_dividend_2025-01-05_17-25-43/{model_name}/base/"
+        pt_directory = f"./Saved_models/ft&eval_neu_neg_synth_dividend_2025-01-05_17-25-43/{model_name}/pt/"
+        rd_pt_directory = f"./Saved_models/ft&eval_neu_neg_synth_dividend_2025-01-05_17-25-43/{model_name}/rd_pt/"
+
+        # Tokenizers and models
+        base_tokenizer = AutoTokenizer.from_pretrained(model["tokenizer"])
+        pt_tokenizer = AutoTokenizer.from_pretrained(pt_directory)
+        rd_pt_tokenizer = AutoTokenizer.from_pretrained(rd_pt_directory)
+
+        base = AutoModelForSequenceClassification.from_pretrained(base_directory, num_labels=3).to(device)
+        pt_model = AutoModelForSequenceClassification.from_pretrained(pt_directory, num_labels=3).to(device)
+        rd_pt_model = AutoModelForSequenceClassification.from_pretrained(rd_pt_directory, num_labels=3).to(device)
+
+        base_collator = DataCollatorWithPadding(tokenizer=base_tokenizer, return_tensors='pt')
+        pt_data_collator = DataCollatorWithPadding(tokenizer=pt_tokenizer, return_tensors='pt')
+        rd_pt_data_collator = DataCollatorWithPadding(tokenizer=rd_pt_tokenizer, return_tensors='pt')
+
+        # Create model dictionaries
+        base_model = {'name': model_name, 'type': 'base', 'model': base, 'tokenizer': base_tokenizer, 'data_collator': base_collator}
+        pre_train_model = {'name': model_name, 'type': 'pt', 'model': pt_model, 'tokenizer': pt_tokenizer, 'data_collator': pt_data_collator}
+        rd_pre_train_model = {'name': model_name, 'type': 'rd_pt', 'model': rd_pt_model, 'tokenizer': rd_pt_tokenizer, 'data_collator': rd_pt_data_collator}
+        base_and_pt_models = [base_model, pre_train_model, rd_pre_train_model]
+
+        # Evaluation arguments
+        evaluation_args = TrainingArguments(
+            output_dir="./eval_checkpoints",
+            per_device_eval_batch_size=8,
+            logging_dir='./logs',
+            do_eval=True,
+            save_strategy="epoch",
+        )
+
+        for inner_model in base_and_pt_models:
+            for eval_dataset in eval_dataset_dict:
+                tokenized_eval_dataset = eval_dataset['dataset'].map(
+                    lambda x: tokenize_function(inner_model["tokenizer"], x),
+                    batched=True
+                )
+
+                model_type = inner_model['type']
+                print(f"Starts evaluating {model_name} of type: {model_type}")
+
+                # Initialize the Trainer for evaluation
+                trainer = Trainer(
+                    model=inner_model['model'],
+                    args=evaluation_args,
+                    eval_dataset=tokenized_eval_dataset,
+                    tokenizer=inner_model['tokenizer'],
+                    data_collator=inner_model['data_collator'],
+                    compute_metrics=lambda eval_pred: compute_metrics(eval_pred, model_name),
+                )
+
+                # Get predictions
+                predictions = trainer.predict(tokenized_eval_dataset)
+                logits = predictions.predictions
+                true_labels = predictions.label_ids
+
+                # Map logits to predicted labels
+                predicted_labels = torch.argmax(torch.tensor(logits), dim=-1).cpu().numpy()
+
+                # Extract texts from the dataset
+                text_data = [x['text'] for x in eval_dataset['dataset']]
+
+                # Verify dataset lengths match
+                if len(text_data) != len(true_labels) or len(text_data) != len(predicted_labels):
+                    raise ValueError("Mismatch in dataset lengths: text, true_labels, and predicted_labels")
+
+                # Create a Pandas DataFrame
+                results_df = pd.DataFrame({
+                    'text': text_data,
+                    'true_label': true_labels,
+                    'predicted_label': predicted_labels
+                })
+
+                # Save results to CSV
+                results_dir = f"./Evaluation_results/eval_synth_dividend_{now}/{model_name}/{model_type}/"
+                os.makedirs(results_dir, exist_ok=True)
+                csv_file_path = os.path.join(results_dir, f"{eval_dataset['name']}_predictions.csv")
+
+                results_df.to_csv(csv_file_path, index=False)
+                print(f"Prediction results saved to {csv_file_path}")
+
+def evaluating_masking_dividend():
+
+    for model in base_models:
+
+        model_name = model['name']
+
+        base_directory = f"./Saved_models/ft_with_masking_dividend_2025-01-07_12-13-44/{model_name}/base"
+
+        pt_directory = f"./Saved_models/ft_with_masking_dividend_2025-01-07_12-13-44/{model_name}/pt"
+        # pt_directory = './Saved_models/pre_trained_with_old_pt_distilroberta/Pre-Trained_distilroberta-finetuned-financial-news-sentiment-analysis/'
+        # pt_directory = f'./Saved_models/pre_trained_with_old_pt/Pre-Trained_{model_name}'
+        rd_pt_directory = f"./Saved_models/ft_with_masking_dividend_2025-01-07_12-13-44/{model_name}/rd_pt"
+
+        base_tokenizer = AutoTokenizer.from_pretrained(model["tokenizer"])
+
+        base = AutoModelForSequenceClassification.from_pretrained(base_directory, num_labels=3).to(device)
+
+        pt_model = AutoModelForSequenceClassification.from_pretrained(pt_directory, num_labels=3).to(device)
+        pt_tokenizer = AutoTokenizer.from_pretrained(pt_directory)
+
+        # electra_base_model = AutoModelForSequenceClassification.from_pretrained(base_directory, num_labels=3).to(device)
+        # electra_base_tokenizer = AutoTokenizer.from_pretrained(base_directory)
+        # electra_base_collator = DataCollatorWithPadding(tokenizer=electra_base_tokenizer, return_tensors='pt')
+
+
+        rd_pt_model = AutoModelForSequenceClassification.from_pretrained(rd_pt_directory, num_labels=3).to(device)
+        rd_pt_tokenizer = AutoTokenizer.from_pretrained(rd_pt_directory)
+
+        base_collator = DataCollatorWithPadding(tokenizer=base_tokenizer, return_tensors='pt')
+        pt_data_collator = DataCollatorWithPadding(tokenizer=pt_tokenizer, return_tensors='pt')
+        rd_pt_data_collator = DataCollatorWithPadding(tokenizer=rd_pt_tokenizer, return_tensors='pt')
+
+        # Create model dictionaries for base, pre-trained, and RD pre-trained models
+        base_model = {
+            'name': model_name,
+            'type': 'base',
+            'model': base,
+            'tokenizer': base_tokenizer,
+            'data_collator': base_collator
+        }
+        pre_train_model = {
+            "name": model_name,
+            "type": "pt",
+            "model": pt_model,
+            "tokenizer": pt_tokenizer,
+            "data_collator": pt_data_collator,
+        }
+        rd_pre_train_model = {
+            "name": model_name,
+            "type": "rd_pt",
+            "model": rd_pt_model,
+            "tokenizer": rd_pt_tokenizer,
+            "data_collator": rd_pt_data_collator,
+        }
+        base_and_pt_models = [base_model, pre_train_model, rd_pre_train_model]
+        # base_and_pt_models = [base_model]
+
+
+
+        evaluation_args = TrainingArguments(
+            output_dir="./eval_checkpoints",
+            per_device_eval_batch_size=8,
+            logging_dir='./logs',
+            do_eval=True,
+            save_strategy="epoch",
+        )
+
+        for inner_model in base_and_pt_models:  # Iterate over models (base, pre-trained, RD pre-trained)
+            for eval_dataset in eval_dataset_dict:
+                tokenized_eval_dataset = eval_dataset['dataset'].map(lambda x: tokenize_function(inner_model["tokenizer"], x),batched=True)  # Tokenize eval
+
+                model_type = inner_model['type']
+
+                print(f"Starts evaluating {model_name} of type: {model_type}")
+
+
+                # Initialize the Trainer for the evaluation phase
+                trainer = Trainer(
+                    model=inner_model['model'],
+                    args=evaluation_args,
+                    eval_dataset=tokenized_eval_dataset,
+                    tokenizer=inner_model['tokenizer'],
+                    data_collator=inner_model['data_collator'],
+                    compute_metrics=lambda eval_pred : compute_metrics(eval_pred, model_name),
+                )
+
+                evaluation_results = trainer.evaluate()
+
+                results_with_model = {
+                    "Type": inner_model['type'],
+                    "model_name": inner_model['name'],
+                    "results": evaluation_results,
+                    "eval_dataset": eval_dataset['name'],
+                    "evaluation_args": evaluation_args.to_dict()
+                }
+
+
+                results_file_name = f"{eval_dataset['name']}.txt"
+                results_dir = f"./Evaluation_results/eval_masking_dividend_{now}/{model_name}/{model_type}/"
+                os.makedirs(results_dir, exist_ok=True)
+                results_file_path = os.path.join(results_dir, results_file_name)
+
+                with open(results_file_path, "w") as file:
+                    file.write(json.dumps(results_with_model, indent=4))
+
+                print(f"Evaluation results for the model: {model_name} of type: {model_type} saved to {results_dir}")
+
+def evaluating_attention_penalty():
+
+    for model in base_models:
+
+        model_name = model['name']
+
+        base_directory = f"./Saved_models/ft_with_attention_penalty_2025-01-07_12-09-35/{model_name}/base"
+
+        pt_directory = f"./Saved_models/ft_with_attention_penalty_2025-01-07_12-09-35/{model_name}/pt"
+        # pt_directory = './Saved_models/pre_trained_with_old_pt_distilroberta/Pre-Trained_distilroberta-finetuned-financial-news-sentiment-analysis/'
+        # pt_directory = f'./Saved_models/pre_trained_with_old_pt/Pre-Trained_{model_name}'
+        rd_pt_directory = f"./Saved_models/ft_with_attention_penalty_2025-01-07_12-09-35/{model_name}/rd_pt"
+
+        base_tokenizer = AutoTokenizer.from_pretrained(model["tokenizer"])
+
+        base = AutoModelForSequenceClassification.from_pretrained(base_directory, num_labels=3).to(device)
+
+        pt_model = AutoModelForSequenceClassification.from_pretrained(pt_directory, num_labels=3).to(device)
+        pt_tokenizer = AutoTokenizer.from_pretrained(pt_directory)
+
+        # electra_base_model = AutoModelForSequenceClassification.from_pretrained(base_directory, num_labels=3).to(device)
+        # electra_base_tokenizer = AutoTokenizer.from_pretrained(base_directory)
+        # electra_base_collator = DataCollatorWithPadding(tokenizer=electra_base_tokenizer, return_tensors='pt')
+
+
+        rd_pt_model = AutoModelForSequenceClassification.from_pretrained(rd_pt_directory, num_labels=3).to(device)
+        rd_pt_tokenizer = AutoTokenizer.from_pretrained(rd_pt_directory)
+
+        base_collator = DataCollatorWithPadding(tokenizer=base_tokenizer, return_tensors='pt')
+        pt_data_collator = DataCollatorWithPadding(tokenizer=pt_tokenizer, return_tensors='pt')
+        rd_pt_data_collator = DataCollatorWithPadding(tokenizer=rd_pt_tokenizer, return_tensors='pt')
+
+        # Create model dictionaries for base, pre-trained, and RD pre-trained models
+        base_model = {
+            'name': model_name,
+            'type': 'base',
+            'model': base,
+            'tokenizer': base_tokenizer,
+            'data_collator': base_collator
+        }
+        pre_train_model = {
+            "name": model_name,
+            "type": "pt",
+            "model": pt_model,
+            "tokenizer": pt_tokenizer,
+            "data_collator": pt_data_collator,
+        }
+        rd_pre_train_model = {
+            "name": model_name,
+            "type": "rd_pt",
+            "model": rd_pt_model,
+            "tokenizer": rd_pt_tokenizer,
+            "data_collator": rd_pt_data_collator,
+        }
+        base_and_pt_models = [base_model, pre_train_model, rd_pre_train_model]
+        # base_and_pt_models = [base_model]
+
+
+
+        evaluation_args = TrainingArguments(
+            output_dir="./eval_checkpoints",
+            per_device_eval_batch_size=8,
+            logging_dir='./logs',
+            do_eval=True,
+            save_strategy="epoch",
+        )
+
+        for inner_model in base_and_pt_models:  # Iterate over models (base, pre-trained, RD pre-trained)
+            for eval_dataset in eval_dataset_dict:
+                tokenized_eval_dataset = eval_dataset['dataset'].map(lambda x: tokenize_function(inner_model["tokenizer"], x),batched=True)  # Tokenize eval
+
+                model_type = inner_model['type']
+
+                print(f"Starts evaluating {model_name} of type: {model_type}")
+
+
+                # Initialize the Trainer for the evaluation phase
+                trainer = Trainer(
+                    model=inner_model['model'],
+                    args=evaluation_args,
+                    eval_dataset=tokenized_eval_dataset,
+                    tokenizer=inner_model['tokenizer'],
+                    data_collator=inner_model['data_collator'],
+                    compute_metrics=lambda eval_pred : compute_metrics(eval_pred, model_name),
+                )
+
+                evaluation_results = trainer.evaluate()
+
+                results_with_model = {
+                    "Type": inner_model['type'],
+                    "model_name": inner_model['name'],
+                    "results": evaluation_results,
+                    "eval_dataset": eval_dataset['name'],
+                    "evaluation_args": evaluation_args.to_dict()
+                }
+
+
+                results_file_name = f"{eval_dataset['name']}.txt"
+                results_dir = f"./Evaluation_results/eval_attention_penalty_{now}/{model_name}/{model_type}/"
+                os.makedirs(results_dir, exist_ok=True)
+                results_file_path = os.path.join(results_dir, results_file_name)
+
+                with open(results_file_path, "w") as file:
+                    file.write(json.dumps(results_with_model, indent=4))
+
+                print(f"Evaluation results for the model: {model_name} of type: {model_type} saved to {results_dir}")
+
+def evaluating_balanced_labels_distribution_detailed_results_check():
+    for model in base_models:
+        model_name = model['name']
+
+        # Model directories
+        base_directory = f"./Saved_models/ft_with_balanced_labels_dist_2024-12-29_14-40-25/{model_name}/base/"
+        pt_directory = f"./Saved_models/ft_with_balanced_labels_dist_2024-12-29_14-40-25/{model_name}/pt/"
+        rd_pt_directory = f"./Saved_models/ft_with_balanced_labels_dist_2024-12-29_14-40-25/{model_name}/rd_pt/"
+
+        # Tokenizers and models
+        base_tokenizer = AutoTokenizer.from_pretrained(model["tokenizer"])
+        pt_tokenizer = AutoTokenizer.from_pretrained(pt_directory)
+        rd_pt_tokenizer = AutoTokenizer.from_pretrained(rd_pt_directory)
+
+        base = AutoModelForSequenceClassification.from_pretrained(base_directory, num_labels=3).to(device)
+        pt_model = AutoModelForSequenceClassification.from_pretrained(pt_directory, num_labels=3).to(device)
+        rd_pt_model = AutoModelForSequenceClassification.from_pretrained(rd_pt_directory, num_labels=3).to(device)
+
+        base_collator = DataCollatorWithPadding(tokenizer=base_tokenizer, return_tensors='pt')
+        pt_data_collator = DataCollatorWithPadding(tokenizer=pt_tokenizer, return_tensors='pt')
+        rd_pt_data_collator = DataCollatorWithPadding(tokenizer=rd_pt_tokenizer, return_tensors='pt')
+
+        # Create model dictionaries
+        base_model = {'name': model_name, 'type': 'base', 'model': base, 'tokenizer': base_tokenizer, 'data_collator': base_collator}
+        pre_train_model = {'name': model_name, 'type': 'pt', 'model': pt_model, 'tokenizer': pt_tokenizer, 'data_collator': pt_data_collator}
+        rd_pre_train_model = {'name': model_name, 'type': 'rd_pt', 'model': rd_pt_model, 'tokenizer': rd_pt_tokenizer, 'data_collator': rd_pt_data_collator}
+        base_and_pt_models = [base_model, pre_train_model, rd_pre_train_model]
+
+        # Evaluation arguments
+        evaluation_args = TrainingArguments(
+            output_dir="./eval_checkpoints",
+            per_device_eval_batch_size=8,
+            logging_dir='./logs',
+            do_eval=True,
+            save_strategy="epoch",
+        )
+
+        for inner_model in base_and_pt_models:
+            for eval_dataset in eval_dataset_dict:
+                tokenized_eval_dataset = eval_dataset['dataset'].map(
+                    lambda x: tokenize_function(inner_model["tokenizer"], x),
+                    batched=True
+                )
+
+                model_type = inner_model['type']
+                print(f"Starts evaluating {model_name} of type: {model_type}")
+
+                # Initialize the Trainer for evaluation
+                trainer = Trainer(
+                    model=inner_model['model'],
+                    args=evaluation_args,
+                    eval_dataset=tokenized_eval_dataset,
+                    tokenizer=inner_model['tokenizer'],
+                    data_collator=inner_model['data_collator'],
+                    compute_metrics=lambda eval_pred: compute_metrics(eval_pred, model_name),
+                )
+
+                # Get predictions
+                predictions = trainer.predict(tokenized_eval_dataset)
+                logits = predictions.predictions
+                true_labels = predictions.label_ids
+
+                # Map logits to predicted labels
+                predicted_labels = torch.argmax(torch.tensor(logits), dim=-1).cpu().numpy()
+
+                # Extract texts from the dataset
+                text_data = [x['text'] for x in eval_dataset['dataset']]
+
+                # Verify dataset lengths match
+                if len(text_data) != len(true_labels) or len(text_data) != len(predicted_labels):
+                    raise ValueError("Mismatch in dataset lengths: text, true_labels, and predicted_labels")
+
+                # Create a Pandas DataFrame
+                results_df = pd.DataFrame({
+                    'text': text_data,
+                    'true_label': true_labels,
+                    'predicted_label': predicted_labels
+                })
+
+                # Save results to CSV
+                results_dir = f"./Evaluation_results/eval_balanced_labels_distribution_{now}/{model_name}/{model_type}/"
+                os.makedirs(results_dir, exist_ok=True)
+                csv_file_path = os.path.join(results_dir, f"{eval_dataset['name']}_predictions.csv")
+
+                results_df.to_csv(csv_file_path, index=False)
+                print(f"Prediction results saved to {csv_file_path}")
+
+
+def evaluating_length_feature():
+
+    for model in base_models:
+
+        model_name = model['name']
+
+        base_directory = f"./Saved_models/ft_text_length_feature/{model_name}/base"
+
+        pt_directory = f"./Saved_models/ft_text_length_feature/{model_name}/pt"
+        # pt_directory = './Saved_models/pre_trained_with_old_pt_distilroberta/Pre-Trained_distilroberta-finetuned-financial-news-sentiment-analysis/'
+        # pt_directory = f'./Saved_models/pre_trained_with_old_pt/Pre-Trained_{model_name}'
+        rd_pt_directory = f"./Saved_models/ft_text_length_feature/{model_name}/rd_pt"
+
+        base_tokenizer = AutoTokenizer.from_pretrained(model["tokenizer"])
+
+        base = AutoModelForSequenceClassification.from_pretrained(base_directory, num_labels=3).to(device)
+
+        pt_model = AutoModelForSequenceClassification.from_pretrained(pt_directory, num_labels=3).to(device)
+        pt_tokenizer = AutoTokenizer.from_pretrained(pt_directory)
+
+        # electra_base_model = AutoModelForSequenceClassification.from_pretrained(base_directory, num_labels=3).to(device)
+        # electra_base_tokenizer = AutoTokenizer.from_pretrained(base_directory)
+        # electra_base_collator = DataCollatorWithPadding(tokenizer=electra_base_tokenizer, return_tensors='pt')
+
+
+        rd_pt_model = AutoModelForSequenceClassification.from_pretrained(rd_pt_directory, num_labels=3).to(device)
+        rd_pt_tokenizer = AutoTokenizer.from_pretrained(rd_pt_directory)
+
+        base_collator = DataCollatorWithPadding(tokenizer=base_tokenizer, return_tensors='pt')
+        pt_data_collator = DataCollatorWithPadding(tokenizer=pt_tokenizer, return_tensors='pt')
+        rd_pt_data_collator = DataCollatorWithPadding(tokenizer=rd_pt_tokenizer, return_tensors='pt')
+
+        # Create model dictionaries for base, pre-trained, and RD pre-trained models
+        base_model = {
+            'name': model_name,
+            'type': 'base',
+            'model': base,
+            'tokenizer': base_tokenizer,
+            'data_collator': base_collator
+        }
+        pre_train_model = {
+            "name": model_name,
+            "type": "pt",
+            "model": pt_model,
+            "tokenizer": pt_tokenizer,
+            "data_collator": pt_data_collator,
+        }
+        rd_pre_train_model = {
+            "name": model_name,
+            "type": "rd_pt",
+            "model": rd_pt_model,
+            "tokenizer": rd_pt_tokenizer,
+            "data_collator": rd_pt_data_collator,
+        }
+        base_and_pt_models = [base_model, pre_train_model, rd_pre_train_model]
+        # base_and_pt_models = [base_model]
+
+
+
+        evaluation_args = TrainingArguments(
+            output_dir="./eval_checkpoints",
+            per_device_eval_batch_size=8,
+            logging_dir='./logs',
+            do_eval=True,
+            save_strategy="epoch",
+        )
+
+        for inner_model in base_and_pt_models:  # Iterate over models (base, pre-trained, RD pre-trained)
+            for eval_dataset in eval_dataset_dict:
+                tokenized_eval_dataset = eval_dataset['dataset'].map(lambda x: tokenize_function(inner_model["tokenizer"], x),batched=True)  # Tokenize eval
+
+                model_type = inner_model['type']
+
+                print(f"Starts evaluating {model_name} of type: {model_type}")
+
+
+                # Initialize the Trainer for the evaluation phase
+                trainer = Trainer(
+                    model=inner_model['model'],
+                    args=evaluation_args,
+                    eval_dataset=tokenized_eval_dataset,
+                    tokenizer=inner_model['tokenizer'],
+                    data_collator=inner_model['data_collator'],
+                    compute_metrics=lambda eval_pred : compute_metrics(eval_pred, model_name),
+                )
+
+                evaluation_results = trainer.evaluate()
+
+                results_with_model = {
+                    "Type": inner_model['type'],
+                    "model_name": inner_model['name'],
+                    "results": evaluation_results,
+                    "eval_dataset": eval_dataset['name'],
+                    "evaluation_args": evaluation_args.to_dict()
+                }
+
+
+                results_file_name = f"{eval_dataset['name']}.txt"
+                results_dir = f"./Evaluation_results/eval_length_feature_{now}/{model_name}/{model_type}/"
+                os.makedirs(results_dir, exist_ok=True)
+                results_file_path = os.path.join(results_dir, results_file_name)
+
+                with open(results_file_path, "w") as file:
+                    file.write(json.dumps(results_with_model, indent=4))
+
+                print(f"Evaluation results for the model: {model_name} of type: {model_type} saved to {results_dir}")
+
+def evaluating_length_feature_just_roberta_base():
+
+    for model in base_models:
+
+        model_name = model['name']
+
+        base_directory = f"./Saved_models/ft_text_length_feature/{model_name}/base"
+
+        # pt_directory = './Saved_models/pre_trained_with_old_pt_distilroberta/Pre-Trained_distilroberta-finetuned-financial-news-sentiment-analysis/'
+        # pt_directory = f'./Saved_models/pre_trained_with_old_pt/Pre-Trained_{model_name}'
+
+        base_tokenizer = AutoTokenizer.from_pretrained(model["tokenizer"])
+
+        base = AutoModelForSequenceClassification.from_pretrained(base_directory, num_labels=3).to(device)
+
+        # pt_model = AutoModelForSequenceClassification.from_pretrained(pt_directory, num_labels=3).to(device)
+        # pt_tokenizer = AutoTokenizer.fro_pretrained(pt_directory)
+
+        # electra_base_model = AutoModelForSequenceClassification.from_pretrained(base_directory, num_labels=3).to(device)
+        # electra_base_tokenizer = AutoTokenizer.from_pretrained(base_directory)
+        # electra_base_collator = DataCollatorWithPadding(tokenizer=electra_base_tokenizer, return_tensors='pt')
+
+
+        # rd_pt_model = AutoModelForSequenceClassification.from_pretrained(rd_pt_directory, num_labels=3).to(device)
+        # rd_pt_tokenizer = AutoTokenizer.from_pretrained(rd_pt_directory)
+
+        base_collator = DataCollatorWithPadding(tokenizer=base_tokenizer, return_tensors='pt')
+        # pt_data_collator = DataCollatorWithPadding(tokenizer=pt_tokenizer, return_tensors='pt')
+        # rd_pt_data_collator = DataCollatorWithPadding(tokenizer=rd_pt_tokenizer, return_tensors='pt')
+
+        # Create model dictionaries for base, pre-trained, and RD pre-trained models
+        base_model = {
+            'name': model_name,
+            'type': 'base',
+            'model': base,
+            'tokenizer': base_tokenizer,
+            'data_collator': base_collator
+        }
+        # pre_train_model = {
+        #     "name": model_name,
+        #     "type": "pt",
+        #     "model": pt_model,
+        #     "tokenizer": pt_tokenizer,
+        #     "data_collator": pt_data_collator,
+        # }
+        # rd_pre_train_model = {
+        #     "name": model_name,
+        #     "type": "rd_pt",
+        #     "model": rd_pt_model,
+        #     "tokenizer": rd_pt_tokenizer,
+        #     "data_collator": rd_pt_data_collator,
+        # }
+        # base_and_pt_models = [base_model, pre_train_model, rd_pre_train_model]
+        base_and_pt_models = [base_model]
+
+
+
+        evaluation_args = TrainingArguments(
+            output_dir="./eval_checkpoints",
+            per_device_eval_batch_size=8,
+            logging_dir='./logs',
+            do_eval=True,
+            save_strategy="epoch",
+        )
+
+        for inner_model in base_and_pt_models:  # Iterate over models (base, pre-trained, RD pre-trained)
+            for eval_dataset in eval_dataset_dict:
+                tokenized_eval_dataset = eval_dataset['dataset'].map(lambda x: tokenize_function(inner_model["tokenizer"], x),batched=True)  # Tokenize eval
+
+                model_type = inner_model['type']
+
+                print(f"Starts evaluating {model_name} of type: {model_type}")
+
+
+                # Initialize the Trainer for the evaluation phase
+                trainer = Trainer(
+                    model=inner_model['model'],
+                    args=evaluation_args,
+                    eval_dataset=tokenized_eval_dataset,
+                    tokenizer=inner_model['tokenizer'],
+                    data_collator=inner_model['data_collator'],
+                    compute_metrics=lambda eval_pred : compute_metrics(eval_pred, model_name),
+                )
+
+                evaluation_results = trainer.evaluate()
+
+                results_with_model = {
+                    "Type": inner_model['type'],
+                    "model_name": inner_model['name'],
+                    "results": evaluation_results,
+                    "eval_dataset": eval_dataset['name'],
+                    "evaluation_args": evaluation_args.to_dict()
+                }
+
+
+                results_file_name = f"{eval_dataset['name']}.txt"
+                results_dir = f"./Evaluation_results/eval_length_feature_{now}/{model_name}/{model_type}/"
+                os.makedirs(results_dir, exist_ok=True)
+                results_file_path = os.path.join(results_dir, results_file_name)
+
+                with open(results_file_path, "w") as file:
+                    file.write(json.dumps(results_with_model, indent=4))
+
+                print(f"Evaluation results for the model: {model_name} of type: {model_type} saved to {results_dir}")
+
+def evaluating_length_feature_detailed_results_check_just_roberta_base():
+    for model in base_models:
+        model_name = model['name']
+
+        base_directory = f"./Saved_models/ft_text_length_feature/{model_name}/base"
+        # pt_directory = f"./Saved_models/ft_text_length_feature_2025-01-07_19-24-11/{model_name}/pt"
+        # rd_pt_directory = f"./Saved_models/ft_text_length_feature_2025-01-07_19-24-11/{model_name}/rd_pt"
+        #
+        base_tokenizer = AutoTokenizer.from_pretrained(model["tokenizer"])
+        base = AutoModelForSequenceClassification.from_pretrained(base_directory, num_labels=3).to(device)
+
+        # pt_model = AutoModelForSequenceClassification.from_pretrained(pt_directory, num_labels=3).to(device)
+        # pt_tokenizer = AutoTokenizer.from_pretrained(pt_directory)
+        #
+        # rd_pt_model = AutoModelForSequenceClassification.from_pretrained(rd_pt_directory, num_labels=3).to(device)
+        # rd_pt_tokenizer = AutoTokenizer.from_pretrained(rd_pt_directory)
+        #
+        base_collator = DataCollatorWithPadding(tokenizer=base_tokenizer, return_tensors='pt')
+        # pt_data_collator = DataCollatorWithPadding(tokenizer=pt_tokenizer, return_tensors='pt')
+        # rd_pt_data_collator = DataCollatorWithPadding(tokenizer=rd_pt_tokenizer, return_tensors='pt')
+
+        base_model = {'name': model_name, 'type': 'base', 'model': base, 'tokenizer': base_tokenizer, 'data_collator': base_collator}
+        # pre_train_model = {"name": model_name, "type": "pt", "model": pt_model, "tokenizer": pt_tokenizer, "data_collator": pt_data_collator}
+        # rd_pre_train_model = {"name": model_name, "type": "rd_pt", "model": rd_pt_model, "tokenizer": rd_pt_tokenizer, "data_collator": rd_pt_data_collator}
+        #
+        base_and_pt_models = [base_model]
+
+        evaluation_args = TrainingArguments(
+            output_dir="./eval_checkpoints",
+            per_device_eval_batch_size=8,
+            logging_dir='./logs',
+            do_eval=True,
+            save_strategy="epoch",
+        )
+
+        for inner_model in base_and_pt_models:
+            for eval_dataset in eval_dataset_dict:
+                tokenized_eval_dataset = eval_dataset['dataset'].map(
+                    lambda x: tokenize_function(inner_model["tokenizer"], x),
+                    batched=True
+                )
+
+                model_type = inner_model['type']
+
+                print(f"Starts evaluating {model_name} of type: {model_type}")
+
+                trainer = Trainer(
+                    model=inner_model['model'],
+                    args=evaluation_args,
+                    eval_dataset=tokenized_eval_dataset,
+                    tokenizer=inner_model['tokenizer'],
+                    data_collator=inner_model['data_collator'],
+                    compute_metrics=lambda eval_pred: compute_metrics(eval_pred, model_name),
+                )
+
+                # Get predictions
+                predictions = trainer.predict(tokenized_eval_dataset)
+                preds = predictions.predictions.argmax(axis=-1)
+                true_labels = predictions.label_ids
+
+                # Extract text from dataset for better readability
+                eval_texts = [x['text'] for x in eval_dataset['dataset']]
+
+                # Create a DataFrame for results
+                results_df = pd.DataFrame({
+                    'Text': eval_texts,
+                    'True_Label': true_labels,
+                    'Predicted_Label': preds
+                })
+
+                # Save CSV
+                results_dir = f"./Evaluation_results/eval_length_feature_{now}/{model_name}/{model_type}/"
+                os.makedirs(results_dir, exist_ok=True)
+                csv_file_path = os.path.join(results_dir, f"{eval_dataset['name']}.csv")
+
+                results_df.to_csv(csv_file_path, index=False)
+
+                print(f"Evaluation results (with predictions and true labels) saved to {csv_file_path}")
+
+import pandas as pd
+
+def evaluating_length_feature_detailed_results_check():
+    for model in base_models:
+        model_name = model['name']
+
+        base_directory = f"./Saved_models/ft_text_length_feature_2025-01-07_19-24-11/{model_name}/base"
+        pt_directory = f"./Saved_models/ft_text_length_feature_2025-01-07_19-24-11/{model_name}/pt"
+        rd_pt_directory = f"./Saved_models/ft_text_length_feature_2025-01-07_19-24-11/{model_name}/rd_pt"
+
+        base_tokenizer = AutoTokenizer.from_pretrained(model["tokenizer"])
+        base = AutoModelForSequenceClassification.from_pretrained(base_directory, num_labels=3).to(device)
+
+        pt_model = AutoModelForSequenceClassification.from_pretrained(pt_directory, num_labels=3).to(device)
+        pt_tokenizer = AutoTokenizer.from_pretrained(pt_directory)
+
+        rd_pt_model = AutoModelForSequenceClassification.from_pretrained(rd_pt_directory, num_labels=3).to(device)
+        rd_pt_tokenizer = AutoTokenizer.from_pretrained(rd_pt_directory)
+
+        base_collator = DataCollatorWithPadding(tokenizer=base_tokenizer, return_tensors='pt')
+        pt_data_collator = DataCollatorWithPadding(tokenizer=pt_tokenizer, return_tensors='pt')
+        rd_pt_data_collator = DataCollatorWithPadding(tokenizer=rd_pt_tokenizer, return_tensors='pt')
+
+        base_model = {'name': model_name, 'type': 'base', 'model': base, 'tokenizer': base_tokenizer, 'data_collator': base_collator}
+        pre_train_model = {"name": model_name, "type": "pt", "model": pt_model, "tokenizer": pt_tokenizer, "data_collator": pt_data_collator}
+        rd_pre_train_model = {"name": model_name, "type": "rd_pt", "model": rd_pt_model, "tokenizer": rd_pt_tokenizer, "data_collator": rd_pt_data_collator}
+
+        base_and_pt_models = [base_model, pre_train_model, rd_pre_train_model]
+
+        evaluation_args = TrainingArguments(
+            output_dir="./eval_checkpoints",
+            per_device_eval_batch_size=8,
+            logging_dir='./logs',
+            do_eval=True,
+            save_strategy="epoch",
+        )
+
+        for inner_model in base_and_pt_models:
+            for eval_dataset in eval_dataset_dict:
+                tokenized_eval_dataset = eval_dataset['dataset'].map(
+                    lambda x: tokenize_function(inner_model["tokenizer"], x),
+                    batched=True
+                )
+
+                model_type = inner_model['type']
+
+                print(f"Starts evaluating {model_name} of type: {model_type}")
+
+                trainer = Trainer(
+                    model=inner_model['model'],
+                    args=evaluation_args,
+                    eval_dataset=tokenized_eval_dataset,
+                    tokenizer=inner_model['tokenizer'],
+                    data_collator=inner_model['data_collator'],
+                    compute_metrics=lambda eval_pred: compute_metrics(eval_pred, model_name),
+                )
+
+                # Get predictions
+                predictions = trainer.predict(tokenized_eval_dataset)
+                preds = predictions.predictions.argmax(axis=-1)
+                true_labels = predictions.label_ids
+
+                # Extract text from dataset for better readability
+                eval_texts = [x['text'] for x in eval_dataset['dataset']]
+
+                # Create a DataFrame for results
+                results_df = pd.DataFrame({
+                    'Text': eval_texts,
+                    'True_Label': true_labels,
+                    'Predicted_Label': preds
+                })
+
+                # Save CSV
+                results_dir = f"./Evaluation_results/eval_length_feature_{now}/{model_name}/{model_type}/"
+                os.makedirs(results_dir, exist_ok=True)
+                csv_file_path = os.path.join(results_dir, f"{eval_dataset['name']}.csv")
+
+                results_df.to_csv(csv_file_path, index=False)
+
+                print(f"Evaluation results (with predictions and true labels) saved to {csv_file_path}")
+
 
 def evaluating_replace_dividend():
     def replace_dividend(eval_dataset):
@@ -600,7 +1681,6 @@ def evaluating_using_focal_loss_ft():
                 print(f"Evaluation results for the model: {model_name} of type: {model_type} saved to {results_dir}")
 
 def evaluating_using_sec_model():
-    # TODO: ADD THE FINBERT-FT OVER NEU & POS LABELS ONLY
     # Initialize the secondary model and tokenizer only ONCE
     secondary_model_path = "/cs_storage/orkados/Saved_models/ft&eval_2_labels/bert-base-uncased/base/"
     secondary_model = AutoModelForSequenceClassification.from_pretrained(
@@ -1309,10 +2389,16 @@ def find_large_tensors(threshold=100 * 1024 ** 2):  # default threshold is 100 M
             pass  # ignore any non-tensor objects
     return large_tensors
 
-# evaluating_25_11()
 # evaluating_pt_models()
 # evaluating_pt_models_12_11()
 # evaluating_using_focal_loss_ft()
 # evaluating_using_sec_model()
-evaluating_replace_dividend()
+# evaluating_replace_dividend()
 # evaluating()
+# evaluating_balanced_labels_distribution()
+# evaluating_length_feature_just_roberta_base()
+# evaluating_length_feature_detailed_results_check_just_roberta_base()
+# evaluating_synth_dividend_detailed_results_check()
+# evaluating_check_0101()
+# evaluating_masking_dividend()
+evaluating_attention_penalty()

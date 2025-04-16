@@ -226,9 +226,9 @@ def compute_metrics_and_save_preds(eval_pred, model_name, model_type):
     print(f"compute_metrics_and_save_preds has been called with {model_name} type: {model_type}" )
     logits, labels = eval_pred
     predictions = np.argmax(logits, axis=-1)
-    if model_name == 'finbert':
-        id2label = {0: 2, 1: 0, 2: 1}
-        predictions = [id2label[pred] for pred in predictions]
+    # if model_name == 'finbert':
+    #     id2label = {0: 2, 1: 0, 2: 1}
+    #     predictions = [id2label[pred] for pred in predictions]
 
     # # Determine the main model name and access the correct dictionary based on model_type
     # if 'distilroberta' in model_name.lower():
@@ -251,14 +251,14 @@ def compute_metrics_and_save_preds(eval_pred, model_name, model_type):
             break
 
     # needed while using the FINBERT & base_stock-news-distilbert, since its labels are not matching
-    if model_name == 'finbert':
-        id2label = {0: 2, 1: 0, 2: 1}
-        mapped_predictions = [id2label[pred] for pred in predictions]
-    elif model_name == 'distilbert':
-        id2label = {0: 1, 1: 0, 2: 2}
-        mapped_predictions = [id2label[pred] for pred in predictions]
-    else:
-        mapped_predictions = predictions
+    # if model_name == 'finbert':
+    #     id2label = {0: 2, 1: 0, 2: 1}
+    #     mapped_predictions = [id2label[pred] for pred in predictions]
+    # elif model_name == 'distilbert':
+    #     id2label = {0: 1, 1: 0, 2: 2}
+    #     mapped_predictions = [id2label[pred] for pred in predictions]
+    # else:
+    mapped_predictions = predictions
 
 
     # Compute accuracy, precision, recall, and f1 using either mapped or original predictions
@@ -273,6 +273,60 @@ def compute_metrics_and_save_preds(eval_pred, model_name, model_type):
       'recall': recall['recall'],
       'f1': f1['f1']
     }
+
+# the different is no mapped_predictions
+def compute_metrics_and_save_preds_0501(eval_pred, model_name, model_type):
+    print(f"compute_metrics_and_save_preds has been called with {model_name} type: {model_type}" )
+    logits, labels = eval_pred
+    predictions = np.argmax(logits, axis=-1)
+    # if model_name == 'finbert':
+    #     id2label = {0: 2, 1: 0, 2: 1}
+    #     predictions = [id2label[pred] for pred in predictions]
+
+    # # Determine the main model name and access the correct dictionary based on model_type
+    # if 'distilroberta' in model_name.lower():
+    #     model_key = 'distilRoberta'
+    # elif 'distilbert' in model_name.lower():
+    #     model_key = 'distilBert'
+    # elif 'finbert' in model_name.lower():
+    #     model_key = 'finBert'
+    # elif 'electra' in model_name.lower():
+    #     model_key = 'Electra'
+    # else:
+    #     raise ValueError("Model name does not match any expected keys")
+
+    # Locate the right nested dictionary by model type and store predictions, labels, and logits
+    for model in predictions_dict[model_name]:
+        if model['type'] == model_type:
+            model['preds']['predictions'] = predictions
+            model['preds']['labels'] = labels
+            model['preds']['logits'] = logits
+            break
+
+    # needed while using the FINBERT & base_stock-news-distilbert, since its labels are not matching
+    # if model_name == 'finbert':
+    #     id2label = {0: 2, 1: 0, 2: 1}
+    #     mapped_predictions = [id2label[pred] for pred in predictions]
+    # elif model_name == 'distilbert':
+    #     id2label = {0: 1, 1: 0, 2: 2}
+    #     mapped_predictions = [id2label[pred] for pred in predictions]
+    # else:
+    mapped_predictions = predictions
+
+
+    # Compute accuracy, precision, recall, and f1 using either mapped or original predictions
+    accuracy = accuracy_metric.compute(predictions=mapped_predictions, references=labels)
+    precision = precision_metric.compute(predictions=mapped_predictions, references=labels, average='macro')
+    recall = recall_metric.compute(predictions=mapped_predictions, references=labels, average='macro')
+    f1 = f1_metric.compute(predictions=mapped_predictions, references=labels, average='macro')
+
+    return {
+      'accuracy': accuracy['accuracy'],
+      'precision': precision['precision'],
+      'recall': recall['recall'],
+      'f1': f1['f1']
+    }
+
 
 # returns the shortcut name
 def get_model_name(model_name):
@@ -295,11 +349,13 @@ eval_all_agree_df = pd.read_csv('Data/test_datasets/split_eval_test/all_agree_ev
 eval_all_agree = Dataset.from_pandas(eval_all_agree_df)
 
 models_names = ['distilroberta', 'distilbert', 'finbert', 'electra']
-models_types = ['base', 'pt', 'rd_pt']
+# models_names = ['distilroberta', 'distilbert', 'finbert']
+# models_types = ['pt', 'rd_pt']
+models_types = ['base']
 eval_datasets = [{'dataset': eval_all_agree, 'name': 'eval_all_agree'}, {'dataset': eval_consent_75, 'name': 'eval_consent_75'}]
 
 
-def perform_error_analysis(eval_dataset):
+def perform_error_analysis(eval_dataset, folder_name):
 
     # Set up evaluation arguments
     evaluation_args = TrainingArguments(
@@ -314,9 +370,8 @@ def perform_error_analysis(eval_dataset):
     # __________________________
     for model_name in models_names:
         for model_type in models_types:
-
             # Load the Fine-Tuned model for evaluation
-            save_directory = f'./Saved_models/fine-tuned/{model_name}_{model_type}'
+            save_directory = f'./Saved_models/{folder_name}/{model_name}/{model_type}' #changed to match the masking dividend models
             model = AutoModelForSequenceClassification.from_pretrained(save_directory, num_labels=3).to(device)
             tokenizer = AutoTokenizer.from_pretrained(save_directory)
             data_collator = DataCollatorWithPadding(tokenizer=tokenizer, return_tensors='pt')
@@ -333,6 +388,85 @@ def perform_error_analysis(eval_dataset):
                 tokenizer=tokenizer,
                 data_collator=data_collator,
                 compute_metrics=lambda eval_pred: compute_metrics_and_save_preds(eval_pred, model_name, model_type),
+            )
+
+            evaluation_results = trainer.evaluate()
+
+            results_with_model = {
+                "Type": model_type,
+                "model_name": model_name,
+                "results": evaluation_results,
+                "eval_args": evaluation_args.to_dict(),
+            }
+
+            results_file_name = f"{eval_dataset['name']}.txt"
+            results_dir = f"./Evaluation_results/{folder_name}_{now}/{model_name}/{model_type}/"
+            os.makedirs(results_dir, exist_ok=True)
+            results_file_path = os.path.join(results_dir, results_file_name)
+
+            with open(results_file_path, "w") as file:
+                file.write(json.dumps(results_with_model, indent=4))
+
+            print(f"Evaluation results for the FT model: {model_name} of type: {model_type} saved to {results_file_name}")
+
+            # Save evaluation results and data for error analysis
+            eval_results.append({
+                'model_name': model_name,
+                'model_type': model_type,
+                'eval_dataset': eval_dataset['dataset'],
+                'eval_dataset_name': eval_dataset['name'],
+                'evaluation_results': evaluation_results
+            })
+
+    # Run error analysis on the collected results
+    for result in eval_results:
+        model_name = result['model_name']
+        model_type = result['model_type']
+        eval_dataset = result['eval_dataset']
+        eval_dataset_name = result['eval_dataset_name']
+
+        # Access the correct prediction data
+        # for type_data in predictions_dict[model_name]:
+        #     if type_data['type'] == model_type:
+        #         data = type_data['preds']
+        #         error_analysis(model_name, model_type, data, eval_dataset, eval_dataset_name)
+        #         print(f"ended with {model_name} of type {type_data['type']}")
+        #         break
+
+# the different is using the no mapped_predictions compute_metrics
+def perform_error_analysis_0501(eval_dataset, folder_name):
+
+    # Set up evaluation arguments
+    evaluation_args = TrainingArguments(
+        output_dir="./eval_checkpoints",
+        per_device_eval_batch_size=2,
+        logging_dir='./logs',
+        do_eval=True,
+        save_strategy="epoch",
+    )
+
+    eval_results = []  # To store each evaluation result, including dataset, dataset name, and predictions
+    # __________________________
+    for model_name in models_names:
+        for model_type in models_types:
+            # Load the Fine-Tuned model for evaluation
+            save_directory = f'./Saved_models/folder_name/{model_name}/{model_type}' #changed to match the masking dividend models
+            model = AutoModelForSequenceClassification.from_pretrained(save_directory, num_labels=3).to(device)
+            tokenizer = AutoTokenizer.from_pretrained(save_directory)
+            data_collator = DataCollatorWithPadding(tokenizer=tokenizer, return_tensors='pt')
+
+            print(f"Starts evaluating the FT model: {model_name} of type: {model_type} on dataset: {eval_dataset['name']}")
+
+            tokenized_eval_dataset = eval_dataset['dataset'].map(lambda x: tokenize_function(tokenizer, x),batched=True)
+
+            # Initialize the Trainer for the evaluation phase
+            trainer = Trainer(
+                model=model,
+                args=evaluation_args,
+                eval_dataset=tokenized_eval_dataset,
+                tokenizer=tokenizer,
+                data_collator=data_collator,
+                compute_metrics=lambda eval_pred: compute_metrics_and_save_preds_0501(eval_pred, model_name, model_type),
             )
 
             evaluation_results = trainer.evaluate()
@@ -377,6 +511,7 @@ def perform_error_analysis(eval_dataset):
                 error_analysis(model_name, model_type, data, eval_dataset, eval_dataset_name)
                 print(f"ended with {model_name} of type {type_data['type']}")
                 break
+
 
 def perform_error_analysis_calc(eval_dataset):
     """
@@ -986,14 +1121,14 @@ import re
 from collections import defaultdict
 import os
 
-def calculate_predicted_label_statistics_combined(predictions_dict, eval_dataset, word_pattern=r"\bdividen\w*\b"):
+def calculate_predicted_label_statistics_combined(predictions_dict, eval_dataset, folder_name, word_pattern=r"\bdividen\w*\b"):
     """
     Calculate the percentages of the specified word or its variations in each predicted label for all models,
     and save the stats in a single text file. Ensures consistent totals.
     """
     stats_dir = "./Prediction_Statistics"
     os.makedirs(stats_dir, exist_ok=True)
-    combined_stats_file_path = os.path.join(stats_dir, "combined_word_statistics.txt")
+    combined_stats_file_path = os.path.join(stats_dir, f"combined_word_statistics_{folder_name}_{now}.txt")
 
     with open(combined_stats_file_path, "w") as combined_file:
         combined_file.write("Combined Word Statistics for All Models\n")
@@ -1069,12 +1204,11 @@ def calculate_predicted_label_statistics_combined(predictions_dict, eval_dataset
 
 # for eval_dataset in eval_datasets:
 eval_dataset = {'dataset': eval_consent_75, 'name': 'eval_consent_75'}
-# perform_error_analysis(eval_dataset)
 
 # ________Calculate the distribution of the word 'dividend'_______
-# percentages = calculate_true_label_statistics(eval_dataset['dataset'])
 # print("Percentage of word occurrences in true labels:")
-# print(percentages)
+# percentages = calculate_true_label_statistics(eval_dataset['dataset'])
+
 # perform_error_analysis(eval_dataset)
 # calculate_predicted_label_statistics_combined(predictions_dict, eval_dataset['dataset'])
 # ________Calculate the distribution of the word 'dividend'_______
@@ -1106,13 +1240,11 @@ def clean_dataset(dataset, idx):
     return cleaned_dataset
 
 # ___________check attention of "dividend"__________
-import torch
-from transformers import AutoTokenizer, AutoModelForSequenceClassification
-
-# Load model and tokenizer
-model = AutoModelForSequenceClassification.from_pretrained("./Saved_models/fine-tuned/finbert_base", num_labels=3).to(device)
-tokenizer = AutoTokenizer.from_pretrained("./Saved_models/fine-tuned/finbert_base")
 def calculate_avg_attention(target_words, dataset):
+    # Load model and tokenizer
+    model = AutoModelForSequenceClassification.from_pretrained("./Saved_models/fine-tuned/finbert_base",num_labels=3).to(device)
+    tokenizer = AutoTokenizer.from_pretrained("./Saved_models/fine-tuned/finbert_base")
+
     target_token_ids = [tokenizer(word, add_special_tokens=False)["input_ids"] for word in target_words]
     target_token_ids = [torch.tensor(ids).to(device) for ids in target_token_ids]  # Move to device
 
@@ -1172,13 +1304,15 @@ def calculate_avg_attention(target_words, dataset):
     print(f"Overall Average Attention for '{target_words[0]}' and '{target_words[1]}': {avg_target_attention:.4f}")
     print(f"Overall Average Attention for Other Tokens: {avg_other_attention:.4f}")
 
-calculate_avg_attention(["dividend", "dividends"], eval_consent_75)
-calculate_avg_attention(["cut", "cuts"], eval_consent_75)
-calculate_avg_attention(["share", "shares"], eval_consent_75)
-calculate_avg_attention(["profit", "profits"], eval_consent_75)
-calculate_avg_attention(["yield", "yields"], eval_consent_75)
+# calculate_avg_attention(["dividend", "dividends"], eval_consent_75)
+# calculate_avg_attention(["cut", "cuts"], eval_consent_75)
+# calculate_avg_attention(["share", "shares"], eval_consent_75)
+# calculate_avg_attention(["profit", "profits"], eval_consent_75)
+# calculate_avg_attention(["yield", "yields"], eval_consent_75)
 
 # ______________________________________________
+
+
 # import torch
 # from transformers import AutoTokenizer, AutoModelForSequenceClassification
 # import matplotlib.pyplot as plt
@@ -1338,3 +1472,12 @@ def get_dataset(idx):
 # for idx in range(1, NUM_DATASETS):
 #     dataset = get_dataset(idx)
 #     percentages = calculate_true_label_statistics(dataset)
+
+# check evaluation of dividend models:
+# for folder_name in ["ft&eval_matched_dist_synth_dividend", "ft&eval_neu_neg_synth_dividend", "ft_with_attention_penalty", "ft_with_masking_dividend"]:
+folder_name = "ft&eval_matched_dist_synth_dividend"
+perform_error_analysis(eval_dataset, folder_name)
+calculate_predicted_label_statistics_combined(predictions_dict, eval_dataset['dataset'], folder_name)
+
+
+
